@@ -6,6 +6,7 @@ import json
 # Feste API-Schlüssel (bitte mit deinen echten Werten ersetzen)
 TELEGRAM_BOT_TOKEN = "7711689040:AAGjCqdOQKPj-hJbqWvJKv0n_xGf0Rlfx2Q"
 OPENAI_API_KEY = "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"
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # Initialisierung des Telegram-Bots und von OpenAI
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
