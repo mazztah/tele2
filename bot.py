@@ -4,7 +4,6 @@ import asyncio
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from telegram.request import HTTPXRequest
 from openai import OpenAI
 from dotenv import load_dotenv  # Für Umgebungsvariablen
 
@@ -22,11 +21,8 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # Initialisiere Flask
 app = Flask(__name__)
 
-# Erhöhe den Verbindungs-Pool für die Telegram API
-request = HTTPXRequest(con_pool_size=20)
-bot = Bot(token=TOKEN, request=request)
-
 # Initialisiere Telegram-Application
+bot = Bot(token=TOKEN)
 app_telegram = Application.builder().token(TOKEN).build()
 
 # Logging aktivieren
