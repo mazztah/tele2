@@ -45,7 +45,7 @@ def webhook():
 
 # Webhook setzen
 def set_webhook():
-    webhook_url = f"https://api.render.com/deploy/srv-cug9s58gph6c73d0987g?key=jZ8WAQ8q9KQ"
+    webhook_url = f"https://api.render.com/deploy/srv-cug9s58gph6c73d0987g?key=jZ8WAQ8q9KQ/webhook"
     bot.set_webhook(url=webhook_url)
 
 # Flask-App starten
