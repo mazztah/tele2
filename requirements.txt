@@ -4,3 +4,4 @@ openai==1.6.1
 Flask==2.2.2
 werkzeug==2.2.2
 python-dotenv==1.0.0
+nest-asyncio==1.5.8
