@@ -1,82 +1,66 @@
-import os
-import logging
-import asyncio
 from flask import Flask, request
-from telegram import Bot
-from telegram.ext import CommandHandler, MessageHandler, Filters, Updater
-from telegram.ext import Dispatcher
-from dotenv import load_dotenv
+import telegram
 import openai
-from telegram.utils.request import HTTPXRequest
+import json
+import os
+from dotenv import load_dotenv
 
-# Lade Umgebungsvariablen
+# .env-Datei laden
 load_dotenv()
 
-# Setze die OpenAI API-Schlüssel und Telegram-Bot-Token
-openai.api_key = os.getenv("OPENAI_API_KEY")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_API_KEY")
+# API-Schlüssel aus Umgebungsvariablen abrufen
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Flask-Setup
+if not TELEGRAM_BOT_TOKEN or not OPENAI_API_KEY:
+    raise ValueError("Fehlende Umgebungsvariablen: TELEGRAM_BOT_TOKEN oder OPENAI_API_KEY")
+
+# Initialisierung des Telegram-Bots
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+
+# Initialisierung von OpenAI-Client
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
 app = Flask(__name__)
 
-# Telegram-Setup
-request = HTTPXRequest(con_pool_size=20)
-bot = Bot(TELEGRAM_TOKEN, request=request)
-updater = Updater(TELEGRAM_TOKEN, use_context=True)
-dispatcher = updater.dispatcher
-
-# Logger-Setup
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Funktion zur Generierung der Antwort von OpenAI
 def generate_response(message):
-    """Generiert eine Antwort mit OpenAI GPT-4o."""
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "Du bist ein hilfreicher Telegram-Bot."},
-            {"role": "user", "content": message},
-        ],
-        max_tokens=150,
-    )
-    return response.choices[0].message['content'].strip()
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Du bist ein hilfreicher Telegram-Bot."},
+                {"role": "user", "content": message},
+            ],
+            max_tokens=150,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Fehler bei OpenAI-Anfrage: {e}")
+        return "Entschuldigung, ich konnte keine Antwort generieren."
 
-# Command-Handler für /start
-def start(update, context):
-    update.message.reply_text("Hallo! Wie kann ich dir helfen?")
-
-# Nachricht-Handler für Textnachrichten
-def handle_message(update, context):
-    user_message = update.message.text
-    response = generate_response(user_message)
-    update.message.reply_text(response)
-
-# Setze den Webhook für Telegram
-async def set_webhook():
-    webhook_url = os.getenv("WEBHOOK_URL")  # Setze die URL für den Webhook
-    await bot.set_webhook(webhook_url)
-
-# Flask-Endpunkt für Webhook
 @app.route('/webhook', methods=['POST'])
-async def webhook():
-    if request.method == "POST":
-        json_str = request.get_data().decode("UTF-8")
-        update = updater.bot.parse_update(json_str)
-        dispatcher.process_update(update)
-        return 'OK', 200
-    return 'Invalid Method', 405
+def webhook():
+    try:
+        # JSON-Daten von Telegram abrufen
+        update = request.get_json()
+        print("Update erhalten:")
+        print(json.dumps(update, indent=4))
 
-# Flask-Server starten
+        # Überprüfen, ob es sich um eine Nachricht mit Text handelt
+        if "message" in update and "text" in update["message"]:
+            chat_id = update["message"]["chat"]["id"]
+            message_text = update["message"]["text"]
+
+            # Antwort mit OpenAI generieren
+            answer = generate_response(message_text)
+
+            # Antwort an den Chat senden
+            bot.send_message(chat_id=chat_id, text=answer)
+
+        return "", 200
+    except Exception as e:
+        print(f"Fehler bei der Verarbeitung des Webhooks: {e}")
+        return "Internal Server Error", 500
+
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))  # Falls keine Umgebungsvariable gesetzt ist, wird Port 5000 verwendet
-    # Registriere die Telegram-Handler
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-
-    # Starte Flask mit asyncio und dynamischem Port
-    asyncio.run(set_webhook())
-    app.run(debug=True, host="0.0.0.0", port=port)
-
-
+    app.run(host="0.0.0.0", port=10000, debug=True)
