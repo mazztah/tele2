@@ -2,11 +2,16 @@ from flask import Flask, request
 import telegram
 import openai
 import json
-import asyncio  # Hier importieren wir asyncio
+import asyncio
+from dotenv import load_dotenv
+import os
 
-# Feste API-Schlüssel (ersetze sie mit deinen echten Werten)
-TELEGRAM_BOT_TOKEN = "DEIN_BOT_TOKEN"
-OPENAI_API_KEY = "DEIN_OPENAI_API_KEY"
+# Lade die Umgebungsvariablen aus der .env-Datei
+load_dotenv()
+
+# Hole die API-Schlüssel aus den Umgebungsvariablen
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Initialisierung des Telegram-Bots
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
@@ -55,4 +60,5 @@ def webhook():
 if __name__ == '__main__':
     # Flask-Server starten (hier auf Port 10000)
     app.run(host="0.0.0.0", port=10000, debug=True)
+
 
