@@ -1,18 +1,18 @@
 from flask import Flask, request
 import telegram
 import openai
-import os
+import json
+
+# Feste API-Schlüssel (bitte mit deinen echten Werten ersetzen)
+TELEGRAM_BOT_TOKEN = "7711689040:AAGjCqdOQKPj-hJbqWvJKv0n_xGf0Rlfx2Q"
+OPENAI_API_KEY = "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"
+
+# Initialisierung des Telegram-Bots und von OpenAI
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+openai.api_key = OPENAI_API_KEY
 
 app = Flask(__name__)
 
-# Telegram Bot und OpenAI API-Schlüssel
-TELEGRAM_BOT_TOKEN = "7711689040:AAGjCqdOQKPj-hJbqWvJKv0n_xGf0Rlfx2Q"
-api_key = "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"
-client = openai.OpenAI(api_key=api_key)
-
-bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-
-# Funktion zum Generieren von Antworten mit OpenAI GPT-4
 def generate_response(message):
     response = client.chat.completions.create(
         model="gpt-4",
@@ -23,30 +23,36 @@ def generate_response(message):
         max_tokens=150,
     )
     return response.choices[0].message['content'].strip()
+    except Exception as e:
+        print(f"Fehler bei der OpenAI-Anfrage: {e}")
+        return "Entschuldigung, ich konnte keine Antwort generieren."
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        # Die eingehende Nachricht von Telegram verarbeiten
-        update = telegram.Update.de_json(request.get_json(), bot)
+        # JSON-Daten von Telegram abrufen
+        update = request.get_json()
+        print("Update erhalten:")
+        print(json.dumps(update, indent=4))
         
-        # Wenn die Nachricht Text enthält, verarbeite die Nachricht
-        if update.message and update.message.text:
-            chat_id = update.message.chat.id
-            message = update.message.text
+        # Überprüfen, ob es sich um eine Nachricht handelt und diese einen Text enthält
+        if "message" in update and "text" in update["message"]:
+            chat_id = update["message"]["chat"]["id"]
+            message_text = update["message"]["text"]
             
-            # Generiere die Antwort über OpenAI
-            response = generate_response(message)
+            # Antwort mit OpenAI generieren
+            answer = generate_response(message_text)
             
-            # Sende die Antwort zurück an den Telegram-Chat
-            bot.send_message(chat_id=chat_id, text=response)
+            # Antwort an den entsprechenden Chat senden
+            bot.send_message(chat_id=chat_id, text=answer)
         
-        # Telegram erwartet eine OK-Antwort für den Webhook
-        return 'OK', 200
+        # Eine leere Antwort mit HTTP-Status 200 zurückgeben
+        return "", 200
     except Exception as e:
-        # Im Fehlerfall gib eine Fehlermeldung zurück
-        return f"Error: {str(e)}", 500
+        print(f"Fehler bei der Verarbeitung des Webhooks: {e}")
+        return "Internal Server Error", 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host="0.0.0.0", port=int(os.getenv('PORT', 5000)))
+    # Flask-Server starten (hier auf Port 10000, passe diesen ggf. an)
+    app.run(host="0.0.0.0", port=10000, debug=True)
 
