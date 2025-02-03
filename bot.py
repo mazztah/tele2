@@ -43,7 +43,7 @@ def generate_response(message):
         max_tokens=150,
     )
     
-    return response.choices[0].message['content'].strip()
+    return response.choices[0].message.content.strip()
 
 # Flask-Route für den Webhook
 @app.route('/webhook', methods=['POST'])
