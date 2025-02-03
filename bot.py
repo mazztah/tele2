@@ -1,27 +1,39 @@
+import os
+import logging
+import openai
 from flask import Flask, request
 import telegram
-import openai
-import json
 import asyncio
+import nest_asyncio
 from dotenv import load_dotenv
-import os
 
-# Lade die Umgebungsvariablen aus der .env-Datei
+# .env-Datei laden
 load_dotenv()
 
-# Hole die API-Schlüssel aus den Umgebungsvariablen
+# Log-Level setzen
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+
+# API-Schlüssel aus Umgebungsvariablen
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Initialisierung des Telegram-Bots
+# Telegram Bot-Initialisierung ohne Request
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 
-# Initialisierung von OpenAI-Client
+# OpenAI-Client-Initialisierung
+openai.api_key = OPENAI_API_KEY
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
+# Flask-App initialisieren
 app = Flask(__name__)
 
+# Nest Asyncio für Flask verwenden, um asynchrone Aufrufe zu ermöglichen
+nest_asyncio.apply()
+
+# Funktion zum Generieren einer Antwort von OpenAI
 def generate_response(message):
+    """Generiert eine Antwort von OpenAI."""
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -30,36 +42,35 @@ def generate_response(message):
         ],
         max_tokens=150,
     )
+    
     return response.choices[0].message.content.strip()
 
+# Flask-Route für den Webhook
 @app.route('/webhook', methods=['POST'])
-def webhook():
+async def webhook():
     try:
-        # JSON-Daten von Telegram abrufen
+        # JSON-Daten von Telegram empfangen
         update = request.get_json()
-        print("Update erhalten:")
-        print(json.dumps(update, indent=4))
-        
-        # Überprüfen, ob es sich um eine Nachricht mit Text handelt
+        logger.info(f"Update erhalten: {update}")
+
+        # Überprüfen, ob eine Textnachricht vorhanden ist
         if "message" in update and "text" in update["message"]:
             chat_id = update["message"]["chat"]["id"]
             message_text = update["message"]["text"]
-            
-            # Antwort mit OpenAI generieren
+
+            # Antwort generieren
             answer = generate_response(message_text)
-            
-            # Die asynchrone send_message-Methode mit asyncio.run() aufrufen
-            asyncio.run(bot.send_message(chat_id=chat_id, text=answer))
-        
-        # Eine leere Antwort mit HTTP-Status 200 zurückgeben
+
+            # Antwort an den Telegram-Chat senden
+            await bot.send_message(chat_id=chat_id, text=answer)
         return "", 200
     except Exception as e:
-        print(f"Fehler bei der Verarbeitung des Webhooks: {e}")
+        logger.error(f"Fehler bei der Verarbeitung des Webhooks: {e}")
         return "Internal Server Error", 500
 
 if __name__ == '__main__':
-    # Flask-Server starten (hier auf Port 10000)
     app.run(host="0.0.0.0", port=10000, debug=True)
+
 
 
 
