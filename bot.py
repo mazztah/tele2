@@ -23,9 +23,7 @@ def generate_response(message):
         max_tokens=150,
     )
     return response.choices[0].message['content'].strip()
-    except Exception as e:
-        print(f"Fehler bei der OpenAI-Anfrage: {e}")
-        return "Entschuldigung, ich konnte keine Antwort generieren."
+  
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
