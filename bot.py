@@ -3,8 +3,7 @@ import logging
 import openai
 from flask import Flask, request
 import telegram
-from telegram import Bot
-from telegram.utils.request import Request
+from telegram import Bot, Request
 import asyncio
 import nest_asyncio
 from dotenv import load_dotenv
@@ -71,6 +70,9 @@ async def webhook():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=10000, debug=True)
+
+
+
 
 
 
