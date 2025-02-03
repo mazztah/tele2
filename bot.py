@@ -13,7 +13,7 @@ bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 # Webhook-URL (ersetze 'your-app-name.onrender.com' mit deiner Render-Domain)
-WEBHOOK_URL = "https://telegrbot-44e2.onrender.com/webhook"
+WEBHOOK_URL = "https://api.render.com/deploy/srv-cufvcapopnds73b9fsog?key=SW0SFPKV7xI"
 
 # Funktion zum Generieren von Antworten mit OpenAI GPT-4o
 def generate_response(message):
