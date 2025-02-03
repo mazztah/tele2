@@ -23,6 +23,7 @@ bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 
 # OpenAI-Client-Initialisierung
 openai.api_key = OPENAI_API_KEY
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # Flask-App initialisieren
 app = Flask(__name__)
