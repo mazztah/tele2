@@ -1,9 +1,8 @@
-
 import telegram
 from telegram.ext import Application, MessageHandler, filters
 import openai
 
-# Deine API-Schlüssel
+# Deine API-Schlüssel (ersetze mit deinen echten Token)
 TELEGRAM_BOT_TOKEN = "7711689040:AAGjCqdOQKPj-hJbqWvJKv0n_xGf0Rlfx2Q"
 api_key = "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"
 client = openai.OpenAI(api_key=api_key)
@@ -12,8 +11,9 @@ client = openai.OpenAI(api_key=api_key)
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# Vorherigen Webhook löschen (um Konflikte zu vermeiden)
-bot.delete_webhook()
+# 🔧 Webhook löschen, um Konflikte zu vermeiden
+async def delete_old_webhook():
+    await bot.delete_webhook(drop_pending_updates=True)
 
 # Funktion zum Generieren von Antworten mit OpenAI GPT-4o
 def generate_response(message):
@@ -33,9 +33,12 @@ async def handle_message(update, context):
     response = generate_response(message)
     await update.message.reply_text(response)
 
-# Handler hinzufügen
+# Handler zum Bot hinzufügen
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Bot im Polling-Modus starten
-application.run_polling(drop_pending_updates=True)
-
+if __name__ == "__main__":
+    # Löscht alten Webhook, bevor Polling startet
+    application.run_coroutine(delete_old_webhook())
+    
+    # Starte den Bot im Polling-Modus
+    application.run_polling(drop_pending_updates=True)
