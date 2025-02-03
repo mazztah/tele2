@@ -3,7 +3,6 @@ import logging
 import openai
 from flask import Flask, request
 import telegram
-from telegram import Bot, Request
 import asyncio
 import nest_asyncio
 from dotenv import load_dotenv
@@ -19,9 +18,8 @@ logger = logging.getLogger()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Telegram Bot-Initialisierung mit erweiterter Pool-Größe und Timeout
-request = Request(con_pool_size=30, read_timeout=60, connect_timeout=60)  # Erhöhte Pool-Größe und Timeouts
-bot = Bot(token=TELEGRAM_BOT_TOKEN, request=request)
+# Telegram Bot-Initialisierung ohne Request
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 
 # OpenAI-Client-Initialisierung
 openai.api_key = OPENAI_API_KEY
@@ -43,7 +41,8 @@ def generate_response(message):
         ],
         max_tokens=150,
     )
-    return response.choices[0].message.content.strip()
+    
+    return response.choices[0].message['content'].strip()
 
 # Flask-Route für den Webhook
 @app.route('/webhook', methods=['POST'])
@@ -70,8 +69,6 @@ async def webhook():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=10000, debug=True)
-
-
 
 
 
