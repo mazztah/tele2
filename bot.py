@@ -3,14 +3,15 @@ import telegram
 import openai
 import json
 
-# Feste API-Schlüssel (bitte mit deinen echten Werten ersetzen)
+# Feste API-Schlüssel (ersetze sie mit deinen echten Werten)
 TELEGRAM_BOT_TOKEN = "7711689040:AAGjCqdOQKPj-hJbqWvJKv0n_xGf0Rlfx2Q"
 OPENAI_API_KEY = "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"
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# Initialisierung des Telegram-Bots und von OpenAI
+# Initialisierung des Telegram-Bots
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-openai.api_key = OPENAI_API_KEY
+
+# Initialisierung von OpenAI-Client
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 app = Flask(__name__)
 
@@ -23,8 +24,7 @@ def generate_response(message):
         ],
         max_tokens=150,
     )
-    return response.choices[0].message['content'].strip()
-  
+    return response.choices[0].message.content.strip()
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -34,7 +34,7 @@ def webhook():
         print("Update erhalten:")
         print(json.dumps(update, indent=4))
         
-        # Überprüfen, ob es sich um eine Nachricht handelt und diese einen Text enthält
+        # Überprüfen, ob es sich um eine Nachricht mit Text handelt
         if "message" in update and "text" in update["message"]:
             chat_id = update["message"]["chat"]["id"]
             message_text = update["message"]["text"]
@@ -52,6 +52,5 @@ def webhook():
         return "Internal Server Error", 500
 
 if __name__ == '__main__':
-    # Flask-Server starten (hier auf Port 10000, passe diesen ggf. an)
+    # Flask-Server starten (hier auf Port 10000)
     app.run(host="0.0.0.0", port=10000, debug=True)
-
