@@ -2,33 +2,35 @@ import os
 import logging
 import asyncio
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from openai import OpenAI
-from dotenv import load_dotenv  # Für Umgebungsvariablen
+from telegram import Bot
+from telegram.ext import CommandHandler, MessageHandler, Filters, Updater
+from telegram.ext import Dispatcher
+from dotenv import load_dotenv
+import openai
+from telegram.utils.request import HTTPXRequest
 
 # Lade Umgebungsvariablen
 load_dotenv()
 
-# Konfiguration aus Umgebungsvariablen
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+# Setze die OpenAI API-Schlüssel und Telegram-Bot-Token
+openai.api_key = os.getenv("OPENAI_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_API_KEY")
 
-# OpenAI Client
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# Initialisiere Flask
+# Flask-Setup
 app = Flask(__name__)
 
-# Initialisiere Telegram-Application
-bot = Bot(token=TOKEN)
-app_telegram = Application.builder().token(TOKEN).build()
+# Telegram-Setup
+request = HTTPXRequest(con_pool_size=20)
+bot = Bot(TELEGRAM_TOKEN, request=request)
+updater = Updater(TELEGRAM_TOKEN, use_context=True)
+dispatcher = updater.dispatcher
 
-# Logging aktivieren
-logging.basicConfig(level=logging.INFO)
+# Logger-Setup
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-
+# Funktion zur Generierung der Antwort von OpenAI
 def generate_response(message):
     """Generiert eine Antwort mit OpenAI GPT-4o."""
     response = client.chat.completions.create(
@@ -39,41 +41,42 @@ def generate_response(message):
         ],
         max_tokens=150,
     )
-    return response.choices[0].message.content.strip()
+    return response.choices[0].message['content'].strip()
 
+# Command-Handler für /start
+def start(update, context):
+    update.message.reply_text("Hallo! Wie kann ich dir helfen?")
 
-async def start(update: Update, context):
-    """Start-Handler für den Bot."""
-    await update.message.reply_text("Hallo! Ich bin dein Bot. Wie kann ich helfen?")
-
-
-async def handle_message(update: Update, context):
-    """Antwortet auf Nachrichten mit GPT-4o."""
+# Nachricht-Handler für Textnachrichten
+def handle_message(update, context):
     user_message = update.message.text
-    chat_id = update.message.chat_id
     response = generate_response(user_message)
-    await bot.send_message(chat_id=chat_id, text=response)
+    update.message.reply_text(response)
 
+# Setze den Webhook für Telegram
+async def set_webhook():
+    webhook_url = os.getenv("WEBHOOK_URL")  # Setze die URL für den Webhook
+    await bot.set_webhook(webhook_url)
 
+# Flask-Endpunkt für Webhook
 @app.route('/webhook', methods=['POST'])
 async def webhook():
-    """Empfängt Telegram-Updates via Webhook."""
-    data = await request.get_json()
-    update = Update.de_json(data, bot)
-    await app_telegram.process_update(update)
-    return "OK", 200
+    if request.method == "POST":
+        json_str = request.get_data().decode("UTF-8")
+        update = updater.bot.parse_update(json_str)
+        dispatcher.process_update(update)
+        return 'OK', 200
+    return 'Invalid Method', 405
 
-
-async def set_webhook():
-    """Setzt den Webhook für den Bot."""
-    await bot.set_webhook(url=WEBHOOK_URL)
-
-
+# Flask-Server starten
 if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))  # Falls keine Umgebungsvariable gesetzt ist, wird Port 5000 verwendet
     # Registriere die Telegram-Handler
-    app_telegram.add_handler(CommandHandler("start", start))
-    app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
-    # Starte Flask mit asyncio
+    # Starte Flask mit asyncio und dynamischem Port
     asyncio.run(set_webhook())
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="0.0.0.0", port=port)
+
+
