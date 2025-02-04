@@ -1,80 +1,63 @@
 import os
-import logging
-import asyncio
-from flask import Flask, request
-from telegram import Bot
-from telegram.ext import CommandHandler, MessageHandler, Filters, Updater
-from telegram.ext import Dispatcher
-from dotenv import load_dotenv
 import openai
-from telegram.utils.request import HTTPXRequest
+import telegram
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from flask import Flask, request
+from dotenv import load_dotenv
 
-# Lade Umgebungsvariablen
+# Umgebungsvariablen laden
 load_dotenv()
 
-# Setze die OpenAI API-Schlüssel und Telegram-Bot-Token
-openai.api_key = os.getenv("OPENAI_API_KEY")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_API_KEY")
+# API-Schlüssel aus der Umgebung laden
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Die öffentliche Render-URL
 
-# Flask-Setup
+# Flask-App starten
 app = Flask(__name__)
 
-# Telegram-Setup
-request = HTTPXRequest(con_pool_size=20)
-bot = Bot(TELEGRAM_TOKEN, request=request)
-updater = Updater(TELEGRAM_TOKEN, use_context=True)
-dispatcher = updater.dispatcher
+# Telegram-Bot initialisieren
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# Logger-Setup
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
-logger = logging.getLogger(__name__)
+# OpenAI-Client initialisieren
+openai.api_key = OPENAI_API_KEY
 
-# Funktion zur Generierung der Antwort von OpenAI
+# Funktion zum Generieren von Antworten mit OpenAI GPT-4o
 def generate_response(message):
-    """Generiert eine Antwort mit OpenAI GPT-4o."""
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "Du bist ein hilfreicher Telegram-Bot."},
+            {"role": "system", "content": "You are an AI assistant for a Telegram bot hosted on ply.onrender.com. Your purpose is to provide informative, concise, and engaging responses while maintaining a friendly and professional tone. Always prioritize clarity and accuracy."},
             {"role": "user", "content": message},
         ],
         max_tokens=150,
     )
-    return response.choices[0].message['content'].strip()
+    return response.choices[0].message.content.strip()
 
-# Command-Handler für /start
-def start(update, context):
-    update.message.reply_text("Hallo! Wie kann ich dir helfen?")
+# Handler für eingehende Nachrichten
+async def handle_message(update, context):
+    message = update.message.text
+    response = generate_response(message)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
-# Nachricht-Handler für Textnachrichten
-def handle_message(update, context):
-    user_message = update.message.text
-    response = generate_response(user_message)
-    update.message.reply_text(response)
-
-# Setze den Webhook für Telegram
-async def set_webhook():
-    webhook_url = os.getenv("WEBHOOK_URL")  # Setze die URL für den Webhook
-    await bot.set_webhook(webhook_url)
-
-# Flask-Endpunkt für Webhook
+# Flask-Endpunkt für den Telegram-Webhook
 @app.route('/webhook', methods=['POST'])
 async def webhook():
-    if request.method == "POST":
-        json_str = request.get_data().decode("UTF-8")
-        update = updater.bot.parse_update(json_str)
-        dispatcher.process_update(update)
-        return 'OK', 200
-    return 'Invalid Method', 405
+    update = telegram.Update.de_json(request.get_json(force=True), bot)
+    await application.update_queue.put(update)
+    return "OK", 200
 
-# Flask-Server starten
+# Webhook setzen
+async def set_webhook():
+    await bot.set_webhook(f"{WEBHOOK_URL}/webhook")
+
+# Flask starten
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))  # Falls keine Umgebungsvariable gesetzt ist, wird Port 5000 verwendet
-    # Registriere die Telegram-Handler
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(set_webhook())  # Webhook setzen
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # Nachrichten-Handler
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))  # Server starten
 
-    # Starte Flask mit asyncio und dynamischem Port
-    asyncio.run(set_webhook())
-    app.run(debug=True, host="0.0.0.0", port=port)
