@@ -4,6 +4,8 @@ import openai
 import telegram
 from flask import Flask, request
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
+import time
+from threading import Thread
 
 # 🔹 Umgebungsvariablen für API-Keys
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -92,10 +94,17 @@ PORT = int(os.environ.get("PORT", 5000))
 
 # 🔹 Polling direkt starten
 if __name__ == "__main__":
-    from threading import Thread
+ 
 
     # Flask in einem separaten Thread starten
     Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
 
-    # Telegram-Bot starten
-    application.run_polling()
+    while True:
+        try:
+            application.run_polling()
+        except Exception as e:
+            logger.error(f"Fehler beim Polling: {e}")
+            # Warte kurz, bevor ein neuer Polling-Versuch gestartet wird
+            time.sleep(5)
+
+
