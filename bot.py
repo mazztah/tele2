@@ -5,7 +5,7 @@ import telegram
 from telegram.ext import Application, MessageHandler, filters
 from dotenv import load_dotenv
 
-# Lade Umgebungsvariablen aus der .env-Datei
+# Umgebungsvariablen aus der .env-Datei laden
 load_dotenv()
 
 # API-Schlüssel aus der Umgebung laden
@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 # Telegram Bot Application initialisieren
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+
+# OpenAI API-Key setzen
+openai.api_key = OPENAI_API_KEY
 
 # Funktion zum Generieren von Antworten mit OpenAI GPT-4o
 def generate_response(message):
@@ -25,7 +29,10 @@ def generate_response(message):
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are an AI assistant for a Telegram bot hosted on ply.onrender.com. Your purpose is to provide informative, concise, and engaging responses while maintaining a friendly and professional tone. Always prioritize clarity and accuracy."},
+            {
+                "role": "system",
+                "content": "You are an AI assistant for a Telegram bot hosted on ply.onrender.com. Your purpose is to provide informative, concise, and engaging responses while maintaining a friendly and professional tone. Always prioritize clarity and accuracy."
+            },
             {"role": "user", "content": message},
         ],
         max_tokens=150,
@@ -42,9 +49,10 @@ async def handle_message(update, context):
 # Handler hinzufügen
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Bot starten (Polling-Modus)
+# Hauptprogramm: Bot im Polling-Modus starten
 if __name__ == '__main__':
-    logger.info("Starte Bot mit Polling...")
+    # Lösche den aktiven Webhook, um den Polling-Modus zu ermöglichen.
+    logger.info("Deleting webhook to enable polling mode...")
+    bot.delete_webhook()
+    logger.info("Starting bot with polling...")
     application.run_polling()
-
-
