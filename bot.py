@@ -36,7 +36,6 @@ def generate_response(message):
             {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
             {"role": "user", "content": message},
         ],
-        store: true,
         max_tokens=1500,
     )
     return response.choices[0].message.content.strip()
