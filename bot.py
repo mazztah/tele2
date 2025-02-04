@@ -2,11 +2,13 @@ import os
 import logging
 import openai
 import telegram
+from flask import Flask
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
 
 # 🔹 Umgebungsvariablen für API-Keys
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PORT = int(os.environ.get("PORT", 5000))  # Standard-Port: 5000
 
 # 🔹 Logging einrichten
 logging.basicConfig(
@@ -20,6 +22,13 @@ openai.api_key = OPENAI_API_KEY
 # 🔹 Telegram-Bot initialisieren
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+# 🔹 Flask App für Hosting
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
 
 # 🔹 Funktion zum Generieren von Antworten mit OpenAI GPT-4o
 def generate_response(message):
@@ -57,6 +66,10 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# 🔹 Polling direkt starten
 if __name__ == "__main__":
+    # Flask-Server im Hintergrund starten (nur für Hosting nötig)
+    from threading import Thread
+    Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
+    
+    # Telegram Polling starten
     application.run_polling()
