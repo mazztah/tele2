@@ -2,20 +2,11 @@ import os
 import logging
 import openai
 import telegram
-from flask import Flask
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
 
 # 🔹 Umgebungsvariablen für API-Keys
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# 🔹 Flask App für Port-Erkennung
-app = Flask(__name__)
-PORT = int(os.environ.get("PORT", 5000))  # Standard-Port ist 5000
-
-@app.route('/')
-def home():
-    return "Bot is running!"
 
 # 🔹 Logging einrichten
 logging.basicConfig(
@@ -66,16 +57,6 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# 🔹 Webhook löschen & Polling starten
-async def main():
-    await application.run_polling()
-
+# 🔹 Polling direkt starten
 if __name__ == "__main__":
-    import threading
-    import asyncio
-
-    # Starte den Flask-Server in einem separaten Thread (damit Port erkannt wird)
-    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=PORT, debug=False)).start()
-    
-    # Starte das Telegram-Polling im Haupt-Thread
-    asyncio.run(main())
+    application.run_polling()
