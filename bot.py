@@ -1,66 +1,77 @@
 import os
-import openai
-import telegram
-from telegram.ext import Application, MessageHandler, filters
-from flask import Flask, request
-from dotenv import load_dotenv
+import logging
 import asyncio
+from flask import Flask, request
+import telegram
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from dotenv import load_dotenv
+import openai
 
-# Umgebungsvariablen laden
+# Lade Umgebungsvariablen aus der .env-Datei
 load_dotenv()
 
-# API-Schlüssel aus der Umgebung laden
+# API-Schlüssel und Webhook-URL aus der Umgebung laden
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Render-URL
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # z.B. "https://deinbot.onrender.com"
 
-# Flask-App starten
+# Logging konfigurieren
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Flask-App initialisieren
 app = Flask(__name__)
 
-# Telegram-Bot initialisieren
+# Telegram-Bot und Application initialisieren
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 
 # OpenAI API-Key setzen
 openai.api_key = OPENAI_API_KEY
 
-# Funktion zum Generieren von Antworten mit OpenAI GPT-4o
+# Funktion zum Generieren einer Antwort mit OpenAI GPT-4o
 def generate_response(message):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are an AI assistant for a Telegram bot hosted on Render."},
+            {"role": "system", "content": "You are an AI assistant for a Telegram bot hosted on Render. Your purpose is to provide informative, concise, and engaging responses while maintaining a friendly and professional tone. Always prioritize clarity and accuracy."},
             {"role": "user", "content": message},
         ],
         max_tokens=150,
     )
-    return response.choices[0].message.content.strip()
+    return response.choices[0].message['content'].strip()
 
-# Handler für eingehende Nachrichten
+# Handler für den /start-Befehl (synchroner Handler)
+def start(update, context):
+    update.message.reply_text("Hallo! Ich bin dein Bot. Wie kann ich dir helfen?")
+
+# Asynchroner Nachrichten-Handler für Textnachrichten
 async def handle_message(update, context):
     message = update.message.text
     response = generate_response(message)
-    await update.message.reply_text(response)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
-# Flask-Route für den Webhook
+# Telegram-Handler registrieren
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+# Synthetischer, synchroner Flask-WebHook-Endpunkt
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    update = telegram.Update.de_json(request.get_json(force=True), application.bot)
+    # Lese JSON-Daten aus der Anfrage
+    data = request.get_json(force=True)
+    logger.info(f"Received update: {data}")
+    # Wandle die Daten in ein Telegram-Update um
+    update = telegram.Update.de_json(data, bot)
+    # Verarbeite das Update; asyncio.run() blockiert bis zur Fertigstellung
     asyncio.run(application.process_update(update))
     return "OK", 200
 
-# Webhook setzen
-async def set_webhook():
-    await application.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
-
-# Starten
 if __name__ == '__main__':
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Setze den Webhook bei Telegram (synchron mittels asyncio.run())
+    port = int(os.environ.get("PORT", 5000))
+    asyncio.run(bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
+    # Starte die Flask-App; Render erwartet, dass der Port aus der Umgebungsvariablen PORT gelesen wird.
+    app.run(host="0.0.0.0", port=port)
 
-    # Webhook setzen (asynchron)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(set_webhook())
-
-    # Flask-Server starten
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
