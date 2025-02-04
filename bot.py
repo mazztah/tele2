@@ -1,106 +1,88 @@
 import os
 import logging
-import asyncio
 from flask import Flask, request
-import telegram
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langchain.llms import OpenAI
 from dotenv import load_dotenv
-import openai
+import asyncio
 
-# Laden der Umgebungsvariablen aus der .env-Datei
+# Umgebungsvariablen aus der .env laden
 load_dotenv()
 
-# API-Schlüssel und Konfiguration aus der Umgebung laden
+# Konfiguration aus Umgebungsvariablen
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PORT = int(os.environ.get("PORT", 5000))  # Standardmäßig Port 5000, falls PORT nicht gesetzt ist
+PORT = int(os.environ.get("PORT", 5000))
 
 # Logging konfigurieren
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Flask-App initialisieren
+# --- Langchain Setup ---
+# Definiere ein Prompt-Template und initialisiere den LLMChain
+template = "The user has asked: {question}. Generate a detailed response."
+prompt = PromptTemplate(input_variables=["question"], template=template)
+llm = OpenAI(temperature=0.7, openai_api_key=OPENAI_API_KEY)
+chain = LLMChain(llm=llm, prompt=prompt)
+
+# --- Flask-Webanwendung ---
 app = Flask(__name__)
 
-# Telegram-Bot und Application initialisieren
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
+# --- Telegram Bot Setup ---
+# Initialisiere die Telegram Application
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# OpenAI API-Key setzen (falls benötigt)
-openai.api_key = OPENAI_API_KEY
-
-# --------------------------
-# Funktion zum Generieren von Antworten mit OpenAI GPT-4o
-# --------------------------
-def generate_response(message):
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are an AI assistant for a Telegram bot hosted on ply.onrender.com. Your purpose is to provide informative, concise, and engaging responses while maintaining a friendly and professional tone. Always prioritize clarity and accuracy."},
-            {"role": "user", "content": message},
-        ],
-        max_tokens=150,
+# --- Handler-Definitionen ---
+async def start(update: Update, context):
+    user = update.effective_user
+    await update.message.reply_markdown_v2(
+        fr'Hi {user.mention_markdown_v2()}\! I\'m a bot powered by OpenAI\. Ask me anything\.'
     )
-    return response.choices[0].message.content.strip()
 
-# --------------------------
-# Telegram Bot Handler
-# --------------------------
+async def help_command(update: Update, context):
+    await update.message.reply_text("Ask me any question, and I'll try to answer using AI!")
 
-# Handler für den /start-Befehl (synchron)
-def start(update, context):
-    update.message.reply_text("Hello! I am your bot. How can I help you?")
-
-# Asynchroner Handler für eingehende Textnachrichten (nicht-Befehle)
-async def handle_message(update, context):
+async def handle_message(update: Update, context):
     user_message = update.message.text
-    response_text = generate_response(user_message)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=response_text)
+    try:
+        # Generiere eine Antwort über Langchain
+        response = chain.run(question=user_message)
+        await update.message.reply_text(response)
+    except Exception as e:
+        await update.message.reply_text("Sorry, I couldn't process your request at the moment.")
+        logger.error(f"Error: {e}")
 
-# Registrierung der Telegram-Handler
+# Registriere Telegram-Handler
 application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# --------------------------
-# Flask-Webanwendung
-# --------------------------
-
-# Healthcheck-Route
-@app.route('/', methods=['GET'])
-def home():
-    return "OK", 200
-
-# Webhook-Route: Diese Route wird von Telegram per POST aufgerufen.
-@app.route('/webhook', methods=['POST'])
+# --- Webhook-Route in Flask ---
+@app.route("/webhook", methods=["POST"])
 def webhook():
+    # Lese die eingehenden JSON-Daten (Telegram-Update)
     data = request.get_json(force=True)
     logger.info(f"Received update: {data}")
-    # Erstelle ein Telegram-Update-Objekt aus den empfangenen Daten
-    update = Update.de_json(data, bot)
-    # Verarbeite das Update (dies ruft die registrierten Handler auf)
-    asyncio.run(application.process_update(update))
+    update = Update.de_json(data, application.bot)
+    # Verarbeite das Update (dies ruft die registrierten Telegram-Handler auf)
+    application.process_update(update)
     return "OK", 200
 
-# --------------------------
-# Webhook setzen
-# --------------------------
+# --- Webhook setzen ---
 async def set_webhook():
     webhook_endpoint = f"{WEBHOOK_URL}/webhook"
-    await bot.set_webhook(url=webhook_endpoint)
-    logger.info(f"Webhook gesetzt: {webhook_endpoint}")
+    await application.bot.set_webhook(url=webhook_endpoint)
+    logger.info(f"Webhook set to: {webhook_endpoint}")
 
-# --------------------------
-# Hauptprogramm
-# --------------------------
-if __name__ == '__main__':
-    # Setze den Webhook (asynchron, bevor der Flask-Server startet)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(set_webhook())
-    # Starte den Flask-Webserver; Render erwartet, dass der Port aus der Umgebungsvariablen PORT gelesen wird.
+# --- Hauptprogramm ---
+if __name__ == "__main__":
+    # Setze den Webhook (asynchron)
+    asyncio.run(set_webhook())
+    # Starte den Flask-Webserver; Render verwendet den PORT aus den Umgebungsvariablen
     app.run(host="0.0.0.0", port=PORT)
 
 
