@@ -44,7 +44,7 @@ def generate_response(message):
     """
     Generiert eine Textantwort mithilfe von GPT-4o.
     """
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {
@@ -62,15 +62,15 @@ def generate_response(message):
 
 
 def generate_image(prompt):
-    """
-    Generiert ein Bild mithilfe von DALL·E-3.
-    """
-    response = openai.Image.create(
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    response = client.images.generate(
+        model="dall-e-3",
         prompt=prompt,
-        n=1,
         size="1024x1024",
+        quality="hd",
+        n=1,
     )
-    return response['data'][0]['url']
+    return response.data[0].url
 
 
 def analyze_image(image_bytes):
@@ -82,7 +82,7 @@ def analyze_image(image_bytes):
     encoded_image = base64.b64encode(image_bytes).decode("utf-8")
 
     # Anfrage an OpenAI, bei der das Bild als Input eingebunden wird
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {
