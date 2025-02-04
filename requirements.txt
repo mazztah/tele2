@@ -6,5 +6,5 @@ Flask[async]==2.2.2
 werkzeug==2.2.2
 python-dotenv==1.0.0
 nest-asyncio==1.5.8
-
+langchain==0.0.148
 
