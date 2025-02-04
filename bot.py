@@ -2,86 +2,57 @@ import os
 import logging
 import openai
 import telegram
-from flask import Flask
-from telegram.ext import Application, MessageHandler, filters, CommandHandler
+from telegram.ext import Application, MessageHandler, filters
+from dotenv import load_dotenv
 
-# 🔹 Umgebungsvariablen für API-Keys
+# Umgebungsvariablen aus der .env-Datei laden
+load_dotenv()
+
+# API-Schlüssel aus der Umgebung laden
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# 🔹 Flask App für Render oder andere Hosting-Plattformen
-app = Flask(__name__)
-PORT = int(os.environ.get("PORT", 5000))  # Standard-Port ist 5000
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-# 🔹 Logging einrichten
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+# Logging konfigurieren
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 🔹 OpenAI-Client initialisieren
+# Telegram Bot Application initialisieren
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+
+# OpenAI API-Key setzen
 openai.api_key = OPENAI_API_KEY
 
-# 🔹 Telegram-Bot initialisieren
-bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-# 🔹 Webhook deaktivieren (löst den "Conflict" Fehler)
-async def delete_webhook():
-    await bot.delete_webhook()
-    logger.info("Webhook wurde deaktiviert. Polling kann nun gestartet werden.")
-
-# 🔹 Funktion zum Generieren von Antworten mit OpenAI GPT-4o
+# Funktion zum Generieren von Antworten mit OpenAI GPT-4o
 def generate_response(message):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully."},
+            {
+                "role": "system",
+                "content": "You are an AI assistant for a Telegram bot hosted on ply.onrender.com. Your purpose is to provide informative, concise, and engaging responses while maintaining a friendly and professional tone. Always prioritize clarity and accuracy."
+            },
             {"role": "user", "content": message},
         ],
         max_tokens=150,
     )
     return response.choices[0].message.content.strip()
 
-# 🔹 /start Befehl
-async def start(update, context):
-    await update.message.reply_text("Hallo! Ich bin dein AI-Chatbot. Stelle mir eine Frage!")
-
-# 🔹 /help Befehl
-async def help_command(update, context):
-    await update.message.reply_text("Sende mir eine Nachricht, und ich werde mit AI antworten!")
-
-# 🔹 Nachricht-Handler für alle Texteingaben
+# Handler für eingehende Nachrichten (asynchron)
 async def handle_message(update, context):
     message = update.message.text
+    logger.info("Received message: %s", message)
     response = generate_response(message)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
-# 🔹 Fehlerbehandlung
-async def error_handler(update, context):
-    logger.error(f"Fehler: {context.error}")
-
-# 🔹 Handler hinzufügen
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_command))
+# Handler hinzufügen
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# 🔹 Webhook löschen & Polling starten
-async def main():
-    await delete_webhook()
-    await application.run_polling()
-
-if __name__ == "__main__":
-    import threading
-    import asyncio
-
-    # Starte den Flask-Server in einem separaten Thread
-    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=PORT, debug=False)).start()
-    
-    # Starte das Telegram-Polling im Haupt-Thread
-    asyncio.run(main())
+# Hauptprogramm: Bot im Polling-Modus starten
+if __name__ == '__main__':
+    # Lösche den aktiven Webhook, um den Polling-Modus zu ermöglichen.
+    logger.info("Deleting webhook to enable polling mode...")
+    bot.delete_webhook()
+    logger.info("Starting bot with polling...")
+    application.run_polling()
