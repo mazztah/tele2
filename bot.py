@@ -1,35 +1,37 @@
 import os
 import logging
 import asyncio
-import time  # Für die Wiederverbindung
-
 import openai
 import telegram
-
 from flask import Flask, request
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
 from threading import Thread
 
-# Umgebungsvariablen für API-Keys
+# Umgebungsvariablen
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PORT = int(os.environ.get("PORT", 5000))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Beispiel: "https://yourdomain.com/webhook"
 
 # Logging einrichten
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Flask App initialisieren (optional, für Health Checks etc.)
+# Flask App initialisieren
 app = Flask(__name__)
+@app.route('/')
+def home():
+    return "Bot is running!"
 
-# OpenAI-Client initialisieren
+# OpenAI initialisieren
 openai.api_key = OPENAI_API_KEY
 
-# Funktionen zum Generieren von Text- und Bildantworten mit OpenAI
+# Funktionen zum Generieren von Antworten
 def generate_response(message):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     try:
         response = client.chat.completions.create(
-            model="gpt-4-turbo-preview", # Oder gpt-3.5-turbo
+            model="gpt-4-turbo-preview",  # Alternativ: "gpt-3.5-turbo"
             messages=[
                 {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully."},
                 {"role": "user", "content": message},
@@ -37,12 +39,9 @@ def generate_response(message):
             max_tokens=150,
         )
         return response.choices[0].message.content.strip()
-    except openai.error.OpenAIError as e: # OpenAI-spezifische Fehler abfangen
-        logger.error(f"OpenAI API Fehler: {e}")
-        return "Es gab einen Fehler bei der Bearbeitung deiner Anfrage mit OpenAI." # Benutzerfreundliche Nachricht
-    except Exception as e: # Andere potenzielle Fehler abfangen
-        logger.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
-        return "Ein unerwarteter Fehler ist aufgetreten."
+    except Exception as e:
+        logger.error(f"Fehler beim Generieren der Antwort: {e}")
+        return "Es gab einen Fehler bei der Bearbeitung deiner Anfrage."
 
 def generate_image(prompt):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
@@ -55,66 +54,81 @@ def generate_image(prompt):
             n=1,
         )
         return response.data[0].url
-    except openai.error.OpenAIError as e:
-        logger.error(f"OpenAI API Fehler: {e}")
-        return "Es gab einen Fehler bei der Generierung des Bildes mit OpenAI."
     except Exception as e:
-        logger.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
-        return "Ein unerwarteter Fehler ist aufgetreten."
+        logger.error(f"Fehler bei der Bildgenerierung: {e}")
+        return None
 
-# Telegram Bot Handler (mit Fehlerbehandlung und Wiederverbindung)
+# Telegram Bot Handler
 async def start(update, context):
-    await update.message.reply_text("Hallo! Ich bin dein AI-Chatbot.")
+    await update.message.reply_text("Hallo! Ich bin dein AI-Chatbot. Stelle mir eine Frage oder schicke mir eine Bildbeschreibung!")
 
 async def help_command(update, context):
-    await update.message.reply_text("Sende mir eine Nachricht, oder nutze /start und /help.")
+    await update.message.reply_text("Sende mir eine Nachricht, und ich werde mit AI antworten! Falls du ein Bild generieren möchtest, schreib: 'Erstelle ein Bild von...'")
 
 async def handle_message(update, context):
     message = update.message.text
-    if message.lower().startswith("erstelle ein bild von"):
-        prompt = message.replace("erstelle ein bild von", "").strip()
+    if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
+        prompt = message.replace("erstelle ein bild von", "").replace("generate an image of", "").strip()
         try:
-            image_url = await asyncio.to_thread(generate_image, prompt) # Asynchrone Bildgenerierung
-            await update.message.reply_photo(photo=image_url)
+            image_url = await asyncio.to_thread(generate_image, prompt)
+            if image_url:
+                await update.message.reply_photo(photo=image_url)
+            else:
+                await update.message.reply_text("Fehler bei der Bildgenerierung.")
         except Exception as e:
             logger.error(f"Fehler bei der Bildgenerierung: {e}")
             await update.message.reply_text("Es gab ein Problem bei der Verarbeitung deiner Anfrage.")
     else:
         try:
-            response = await asyncio.to_thread(generate_response, message)  # Asynchrone Textgenerierung
+            response = await asyncio.to_thread(generate_response, message)
             await update.message.reply_text(response)
         except Exception as e:
             logger.error(f"Fehler bei der Texterstellung: {e}")
             await update.message.reply_text("Es gab ein Problem bei der Verarbeitung deiner Anfrage.")
 
 async def error_handler(update, context):
-    logger.error(f"Update {update} verursacht Fehler {context.error}")
+    logger.error(f"Update {update} verursachte Fehler {context.error}")
     try:
-        await update.message.reply_text("Ein Fehler ist aufgetreten. Bitte versuche es später noch einmal.")  # Benutzer benachrichtigen
-    except AttributeError as e:  # Fälle behandeln, in denen update.message None sein könnte
-        logger.error(f"Fehler beim Senden der Fehlermeldung an den Benutzer: {e}")
+        await update.message.reply_text("Ein Fehler ist aufgetreten. Bitte versuche es später noch einmal.")
+    except Exception as e:
+        logger.error(f"Fehler beim Senden der Fehlermeldung: {e}")
 
-# Flask-Route (optional)
-@app.route('/')
-def home():
-    return "Bot is running!"
+# Telegram Application global initialisieren
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+application.add_error_handler(error_handler)
+
+# Globaler Event Loop für die asynchrone Verarbeitung in Flask
+BOT_LOOP = None
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json(force=True)
+    logger.info(f"Webhook erhalten: {data}")
+    update = telegram.Update.de_json(data, application.bot)
+    if BOT_LOOP is not None:
+        asyncio.run_coroutine_threadsafe(application.process_update(update), BOT_LOOP)
+    else:
+        logger.error("BOT_LOOP ist nicht gesetzt!")
+    return "OK", 200
+
+def run_flask():
+    app.run(host="0.0.0.0", port=PORT)
 
 async def main():
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_error_handler(error_handler)
-
-    # Long Polling
-    await application.initialize()
-    await application.start_polling(allowed_updates=telegram.Update.ALL_TYPES)
-    await application.idle()
+    global BOT_LOOP
+    BOT_LOOP = asyncio.get_running_loop()
+    try:
+        await application.bot.set_webhook(WEBHOOK_URL)
+        logger.info(f"Webhook gesetzt auf {WEBHOOK_URL}")
+    except Exception as e:
+        logger.error(f"Fehler beim Setzen des Webhooks: {e}")
+    # Flask-Server in einem separaten Thread starten
+    Thread(target=run_flask).start()
+    # Anwendung am Laufen halten
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    # Flask in einem separaten Thread starten (optional)
-    Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))).start()
-
-    # Telegram Bot in der Hauptschleife ausführen
     asyncio.run(main())
