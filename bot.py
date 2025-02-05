@@ -54,17 +54,17 @@ async def help_command(update, context):
 
 async def handle_message(update, context):
  message = update.message.text
- if message.lower().startswith("erstelle ein bild von"):
- prompt = message.replace("erstelle ein bild von", "").strip()
- image_url = generate_image(prompt)
- await update.message.reply_photo(photo=image_url)
+  if message.lower().startswith("erstelle ein bild von"):
+  prompt = message.replace("erstelle ein bild von", "").strip()
+  image_url = generate_image(prompt)
+  await update.message.reply_photo(photo=image_url)
  else:
- try:
- response = generate_response(message)
- await update.message.reply_text(response)
- except Exception as e:
- logger.error(f"Fehler bei der Texterstellung: {e}")
- await update.message.reply_text("Es gab ein Problem bei der Verarbeitung deiner Anfrage.")
+  try:
+  response = generate_response(message)
+  await update.message.reply_text(response)
+  except Exception as e:
+  logger.error(f"Fehler bei der Texterstellung: {e}")
+  await update.message.reply_text("Es gab ein Problem bei der Verarbeitung deiner Anfrage.")
 
 async def error_handler(update, context):
  logger.error(f"Update {update} verursacht Fehler {context.error}")
