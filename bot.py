@@ -30,8 +30,8 @@ application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 # Funktion: Generiere Textantworten via OpenAI GPT-4o
 def generate_response(message):
-    response = client.chat.completions.create(
-        model="gpt-4o",  # passe das ggf. an deinen gewünschten Modellnamen an
+    response = response = client.chat.completions.create(
+        model="gpt-4o",  # passe den Modellnamen ggf. an
         messages=[
             {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
             {"role": "user", "content": message},
