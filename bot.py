@@ -65,13 +65,13 @@ async def handle_message(update, context):
  message = update.message.text
  # Prüfen, ob der Benutzer ein Bild generieren möchte
  if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
- prompt = message.replace("erstelle ein bild von", "").strip()
- prompt = prompt.replace("generate an image of", "").strip()
- image_url = generate_image(prompt)
- await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+  prompt = message.replace("erstelle ein bild von", "").strip()
+  prompt = prompt.replace("generate an image of", "").strip()
+  image_url = generate_image(prompt)
+  await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
  else:
- response = generate_response(message)
- await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
+  response = generate_response(message)
+  await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
 #  Fehlerbehandlung
 async def error_handler(update, context):
