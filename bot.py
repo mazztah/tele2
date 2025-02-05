@@ -1,31 +1,31 @@
 import os
- import logging
+import logging
  
- import openai
- import telegram
+import openai
+import telegram
  
- from flask import Flask, request
- from telegram.ext import Application, MessageHandler, filters, CommandHandler
- from threading import Thread
+from flask import Flask, request
+from telegram.ext import Application, MessageHandler, filters, CommandHandler
+from threading import Thread
  
  #  Umgebungsvariablen für API-Keys
- TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
- OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
- 
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
  #  Logging einrichten
- logging.basicConfig(
-  format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+logging.basicConfig(
+ format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
  )
- logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
  
  #  Flask App initialisieren
- app = Flask(__name__)
+app = Flask(__name__)
  
  #  OpenAI-Client initialisieren
- openai.api_key = OPENAI_API_KEY
+openai.api_key = OPENAI_API_KEY
  
  #  Telegram-Bot initialisieren
- bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
  application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
  
  #  Funktionen zum Generieren von Text- und Bildantworten mit OpenAI
