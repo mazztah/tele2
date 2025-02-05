@@ -3,21 +3,20 @@ import logging
 import asyncio
 import openai
 import telegram
-
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
 
 # Umgebungsvariablen
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Logging einrichten
+# Logging konfigurieren
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # OpenAI initialisieren
 openai.api_key = OPENAI_API_KEY
 
-# Funktionen zum Generieren von Antworten
+# Funktionen zur Generierung von Antworten
 def generate_response(message):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     try:
@@ -60,23 +59,15 @@ async def handle_message(update, context):
     message = update.message.text
     if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
         prompt = message.replace("erstelle ein bild von", "").replace("generate an image of", "").strip()
-        try:
-            # Blockierende Funktion in einen separaten Thread auslagern
-            image_url = await asyncio.to_thread(generate_image, prompt)
-            if image_url:
-                await update.message.reply_photo(photo=image_url)
-            else:
-                await update.message.reply_text("Fehler bei der Bildgenerierung.")
-        except Exception as e:
-            logger.error(f"Fehler bei der Bildgenerierung: {e}")
-            await update.message.reply_text("Es gab ein Problem bei der Verarbeitung deiner Anfrage.")
+        # Ausführung der blockierenden Funktion in einem Executor
+        image_url = await context.application.run_in_executor(None, generate_image, prompt)
+        if image_url:
+            await update.message.reply_photo(photo=image_url)
+        else:
+            await update.message.reply_text("Fehler bei der Bildgenerierung.")
     else:
-        try:
-            response = await asyncio.to_thread(generate_response, message)
-            await update.message.reply_text(response)
-        except Exception as e:
-            logger.error(f"Fehler bei der Texterstellung: {e}")
-            await update.message.reply_text("Es gab ein Problem bei der Verarbeitung deiner Anfrage.")
+        response = await context.application.run_in_executor(None, generate_response, message)
+        await update.message.reply_text(response)
 
 async def error_handler(update, context):
     logger.error(f"Update {update} verursachte Fehler {context.error}")
@@ -85,19 +76,14 @@ async def error_handler(update, context):
     except Exception as e:
         logger.error(f"Fehler beim Senden der Fehlermeldung: {e}")
 
-async def main():
+def main():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_error_handler(error_handler)
-
-    # Long Polling starten
-    async with application:
-        await application.initialize()
-        await application.start_polling(allowed_updates=telegram.Update.ALL_TYPES)
-        await application.idle()
+    # run_polling() ist die korrekte Methode (start_polling() gibt es nicht)
+    application.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
