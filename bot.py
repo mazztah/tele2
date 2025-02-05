@@ -7,11 +7,14 @@ from telegram.ext import Application, MessageHandler, filters, CommandHandler
 import asyncio
 from threading import Thread
 
+# Globaler Event Loop für den Bot
+BOT_LOOP = None
+
 # Umgebungsvariablen für API-Keys und Konfiguration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PORT = int(os.environ.get("PORT", 5000))
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # z.B. "https://deinedomain.de/webhook"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # z. B. "https://deinedomain.de/webhook"
 
 # Logging konfigurieren
 logging.basicConfig(
@@ -25,8 +28,7 @@ app = Flask(__name__)
 # OpenAI API-Key setzen
 openai.api_key = OPENAI_API_KEY
 
-# Hier definieren wir den globalen Client, der in generate_response und generate_image verwendet wird.
-# Falls du einen speziellen Client benötigst, passe die Instanziierung hier an.
+# Globaler Client, der in generate_response und generate_image verwendet wird
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # Telegram Bot Application initialisieren
@@ -34,7 +36,7 @@ application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 # Funktion: Generiere Textantworten via OpenAI GPT-4o
 def generate_response(message):
-    response = response = client.chat.completions.create(
+    response = client.chat.completions.create(
         model="gpt-4o",  # passe den Modellnamen ggf. an
         messages=[
             {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
@@ -87,9 +89,6 @@ async def handle_message(update, context):
 async def error_handler(update, context):
     logger.error("Fehler: %s", context.error)
 
-# Globaler Event Loop für den Bot
-BOT_LOOP = None
-
 # Flask-Routen
 @app.route('/')
 def home():
@@ -97,7 +96,9 @@ def home():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    update = telegram.Update.de_json(request.get_json(force=True), application.bot)
+    data = request.get_json(force=True)
+    logger.info("Webhook-Aufruf erhalten: %s", data)
+    update = telegram.Update.de_json(data, application.bot)
     if BOT_LOOP is not None:
         asyncio.run_coroutine_threadsafe(application.process_update(update), BOT_LOOP)
     else:
@@ -134,8 +135,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
-
-
