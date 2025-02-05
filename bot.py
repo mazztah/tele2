@@ -25,6 +25,10 @@ app = Flask(__name__)
 # OpenAI API-Key setzen
 openai.api_key = OPENAI_API_KEY
 
+# Hier definieren wir den globalen Client, der in generate_response und generate_image verwendet wird.
+# Falls du einen speziellen Client benötigst, passe die Instanziierung hier an.
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
 # Telegram Bot Application initialisieren
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -61,7 +65,10 @@ async def help_command(update, context):
 async def handle_message(update, context):
     message = update.message.text
     if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
-        prompt = message.lower().replace("erstelle ein bild von", "").replace("generate an image of", "").strip()
+        prompt = (message.lower()
+                  .replace("erstelle ein bild von", "")
+                  .replace("generate an image of", "")
+                  .strip())
         try:
             image_url = generate_image(prompt)
             await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
@@ -78,7 +85,10 @@ async def handle_message(update, context):
 
 # Fehlerbehandlung
 async def error_handler(update, context):
-    logger.error(f"Fehler: {context.error}")
+    logger.error("Fehler: %s", context.error)
+
+# Globaler Event Loop für den Bot
+BOT_LOOP = None
 
 # Flask-Routen
 @app.route('/')
@@ -88,8 +98,10 @@ def home():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = telegram.Update.de_json(request.get_json(force=True), application.bot)
-    # Asynchrone Verarbeitung des Updates
-    asyncio.run_coroutine_threadsafe(application.process_update(update), application.loop)
+    if BOT_LOOP is not None:
+        asyncio.run_coroutine_threadsafe(application.process_update(update), BOT_LOOP)
+    else:
+        logger.error("BOT_LOOP ist nicht gesetzt!")
     return "OK", 200
 
 # Funktion zum Starten von Flask in einem separaten Thread
@@ -97,6 +109,9 @@ def run_flask():
     app.run(host="0.0.0.0", port=PORT)
 
 async def main():
+    global BOT_LOOP
+    BOT_LOOP = asyncio.get_running_loop()
+
     # Handler hinzufügen
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -114,11 +129,12 @@ async def main():
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
     
-    # Halte den Bot am Laufen
+    # Bot am Laufen halten
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
