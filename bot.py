@@ -4,35 +4,34 @@ import openai
 import telegram
 from flask import Flask, request
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
-import time
-from threading import Thread
 import asyncio
+from threading import Thread
 
-# 🔹 Umgebungsvariablen für API-Keys
+# Umgebungsvariablen für API-Keys und Konfiguration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PORT = int(os.environ.get("PORT", 5000))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # z.B. "https://deinedomain.de/webhook"
 
-# 🔹 Logging einrichten
+# Logging konfigurieren
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# 🔹 Flask App initialisieren
+# Flask-App initialisieren
 app = Flask(__name__)
 
-# 🔹 OpenAI-Client initialisieren
+# OpenAI API-Key setzen
 openai.api_key = OPENAI_API_KEY
 
-# 🔹 Telegram-Bot initialisieren
-bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+# Telegram Bot Application initialisieren
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# 🔹 Funktion zum Generieren von Textantworten mit OpenAI GPT-4o
+# Funktion: Generiere Textantworten via OpenAI GPT-4o
 def generate_response(message):
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o",  # passe das ggf. an deinen gewünschten Modellnamen an
         messages=[
             {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
             {"role": "user", "content": message},
@@ -41,74 +40,86 @@ def generate_response(message):
     )
     return response.choices[0].message.content.strip()
 
-# 🔹 Funktion zum Generieren von Bildern mit OpenAI DALL·E-3
+# Funktion: Generiere Bild via OpenAI DALL·E-3
 def generate_image(prompt):
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.images.generate(
-        model="dall-e-3",
         prompt=prompt,
-        size="1024x1024",
-        quality="hd",
         n=1,
+        size="1024x1024",
     )
-    return response.data[0].url
+    return response['data'][0]['url']
 
-# 🔹 /start Befehl
+# /start Befehl
 async def start(update, context):
     await update.message.reply_text("Hallo! Ich bin dein AI-Chatbot. Stelle mir eine Frage oder schicke mir eine Bildbeschreibung!")
 
-# 🔹 /help Befehl
+# /help Befehl
 async def help_command(update, context):
-    await update.message.reply_text("Sende mir eine Nachricht, und ich werde mit AI antworten! Falls du ein Bild generieren willst, schreib: 'Erstelle ein Bild von...'")
+    await update.message.reply_text("Sende mir eine Nachricht, und ich antworte mit AI! Falls du ein Bild generieren möchtest, beginne deine Nachricht mit 'Erstelle ein Bild von...'")
 
-# 🔹 Nachricht-Handler für alle Texteingaben
+# Nachricht-Handler
 async def handle_message(update, context):
     message = update.message.text
-
-    # Prüfen, ob der Benutzer ein Bild generieren möchte
     if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
-        prompt = message.replace("erstelle ein bild von", "").strip()
-        prompt = prompt.replace("generate an image of", "").strip()
-
-        image_url = generate_image(prompt)
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+        prompt = message.lower().replace("erstelle ein bild von", "").replace("generate an image of", "").strip()
+        try:
+            image_url = generate_image(prompt)
+            await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+        except Exception as e:
+            logger.error("Fehler bei der Bildgenerierung: %s", e)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Es gab einen Fehler beim Erstellen des Bildes.")
     else:
-        response = generate_response(message)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
+        try:
+            response = generate_response(message)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
+        except Exception as e:
+            logger.error("Fehler bei der Textgenerierung: %s", e)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Es gab einen Fehler bei der Antwortgenerierung.")
 
-# 🔹 Fehlerbehandlung
+# Fehlerbehandlung
 async def error_handler(update, context):
     logger.error(f"Fehler: {context.error}")
 
-# 🔹 Flask-Route für den Webserver
+# Flask-Routen
 @app.route('/')
 def home():
     return "Bot is running!"
 
-# 🔹 Handler hinzufügen
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_command))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update = telegram.Update.de_json(request.get_json(force=True), application.bot)
+    # Asynchrone Verarbeitung des Updates
+    asyncio.run_coroutine_threadsafe(application.process_update(update), application.loop)
+    return "OK", 200
 
-# 🔹 Port für Flask setzen
-PORT = int(os.environ.get("PORT", 5000))
+# Funktion zum Starten von Flask in einem separaten Thread
+def run_flask():
+    app.run(host="0.0.0.0", port=PORT)
 
-# 🔹 Hauptprogramm: Flask und Polling in einer Endlosschleife starten
-if __name__ == "__main__":
+async def main():
+    # Handler hinzufügen
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_error_handler(error_handler)
+    
+    # Webhook bei Telegram registrieren
+    if not WEBHOOK_URL:
+        logger.error("WEBHOOK_URL Umgebungsvariable ist nicht gesetzt!")
+        return
+    await application.bot.set_webhook(WEBHOOK_URL)
+    logger.info("Webhook gesetzt auf: %s", WEBHOOK_URL)
+    
     # Starte den Flask-Server in einem separaten Thread
-    Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+    
+    # Halte den Bot am Laufen
+    await asyncio.Event().wait()
 
-    while True:
-        try:
-            # Erstelle einen neuen Event Loop für jeden Durchlauf
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            logger.info("Starte Polling...")
-            loop.run_until_complete(application.run_polling())
-        except Exception as e:
-            logger.error(f"Fehler beim Polling: {e}")
-        finally:
-            loop.close()
-        # Kurze Pause, bevor ein neuer Polling-Versuch gestartet wird
-        time.sleep(5)
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+
 
