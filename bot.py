@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Globale application und bot Instanzen (wichtig!)
-application = None  # Initialisieren auf None
-bot = None
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)  # Bot muss *sofort* initialisiert werden
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build() # Application auch
 
 # Funktion zum Generieren von Textantworten mit OpenAI GPT-4
 def generate_response(message):
@@ -101,25 +101,17 @@ async def webhook():
     else:
         return "Bot is running!"
 
-# Handler hinzufügen
+# Handler hinzufügen (muss nach der Initialisierung erfolgen!)
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 application.add_error_handler(error_handler)  # Füge den Fehlerhandler hinzu
 
+
 # Port für Flask setzen
 PORT = int(os.environ.get("PORT", 5000))
 
 def run_telegram_bot():  # Separate Funktion für Telegram Bot
-    global application, bot  # Zugriff auf globale Variablen
-    bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_error_handler(error_handler)
-
     async def set_webhook_and_initialize():
         await bot.set_webhook("https://tele2-pnhl.onrender.com/")  # Deine Webhook-URL
         await application.initialize()
