@@ -115,14 +115,12 @@ if __name__ == "__main__":
     # Starte den Flask-Server in einem separaten Thread
     Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
 
-    async def set_webhook_async():
-        await bot.set_webhook("https://tele2-pnhl.onrender.com/") # Korrekte URL ohne Token
+    async def initialize_and_set_webhook():  # Kombinierte asynchrone Funktion
+        await bot.set_webhook("https://tele2-pnhl.onrender.com/")  # Korrekte URL ohne Token
+        await application.initialize()
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(set_webhook_async())
-
-    # Initialisiere die Application nach dem Setzen des Webhooks
-    application.initialize()
+    loop.run_until_complete(initialize_and_set_webhook())  # Await beide
 
     # Keep the main thread alive (you might need a more robust solution for production)
     while True:
