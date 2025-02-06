@@ -30,7 +30,7 @@ def generate_response(message):
     try:
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4-0613", # or gpt-3.5-turbo
             messages=[
                 {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
                 {"role": "user", "content": message},
@@ -93,10 +93,11 @@ async def error_handler(update, context):
 async def webhook():
     if request.method == 'POST':
         update = telegram.Update.de_json(request.get_json(force=True), bot)
-        try:
-            await application.process_update(update)
-        except Exception as e:
-            logger.error(f"Fehler bei der Verarbeitung des Updates: {e}")
+        loop = asyncio.get_running_loop()  # Den *aktuell* laufenden Loop holen
+        if loop:
+            loop.create_task(application.process_update(update))  # Update-Verarbeitung als Task planen
+        else:
+            logger.error("Kein laufender Event Loop gefunden.")
         return 'ok'
     else:
         return "Bot is running!"
@@ -112,14 +113,21 @@ PORT = int(os.environ.get("PORT", 5000))
 
 def run_telegram_bot():
     async def set_webhook_and_initialize():
-        await bot.set_webhook("https://tele2-pnhl.onrender.com/")  # Deine Webhook-URL  (SICHERSTELLEN, DASS DIES KORREKT IST!)
+        await bot.set_webhook("https://tele2-pnhl.onrender.com/")  # Deine Webhook-URL (SICHERSTELLEN, DASS DIES KORREKT IST!)
         await application.initialize()
 
     async def bot_main():
         await set_webhook_and_initialize()
         await application.run_polling()  # Verwende Polling im Bot-Thread
 
-    asyncio.run(bot_main())  # Starte und verwalte den Event Loop korrekt
+    try:
+        asyncio.run(bot_main())  # Starte und verwalte den Event Loop korrekt
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e):  # Behandle bereits laufenden Loop
+            pass  # Dies ist normalerweise harmlos in diesem Kontext
+        else:
+            raise  # Andere RuntimeErrors erneut auslösen
+
 
 if __name__ == "__main__":
     # Starte den Flask-Server in einem separaten Thread
@@ -127,11 +135,5 @@ if __name__ == "__main__":
     flask_thread.daemon = True  # Erlaubt dem Hauptthread das Beenden
     flask_thread.start()
 
-    # Starte den Telegram-Bot in einem *separaten* Thread
-    telegram_thread = Thread(target=run_telegram_bot)
-    telegram_thread.daemon = True  # Erlaubt dem Hauptthread das Beenden
-    telegram_thread.start()
-
-    # Halte den Hauptthread am Laufen (oder mache andere Dinge)
-    while True:
-        time.sleep(10)
+    # Starte den Telegram-Bot im *Hauptthread*
+    run_telegram_bot()
