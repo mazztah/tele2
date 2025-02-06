@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 # Flask App initialisieren
 app = Flask(__name__)
 
-# Globale application und bot Instanzen (wichtig!)
-bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)  # Bot muss *sofort* initialisiert werden
-application = Application.builder().token(TELEGRAM_BOT_TOKEN).build() # Application auch
+# Bot und Application *sofort* initialisieren
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 # Funktion zum Generieren von Textantworten mit OpenAI GPT-4
 def generate_response(message):
@@ -94,7 +94,7 @@ async def webhook():
     if request.method == 'POST':
         update = telegram.Update.de_json(request.get_json(force=True), bot)
         try:
-            await application.process_update(update)  # Verarbeitung im try-Block
+            await application.process_update(update)
         except Exception as e:
             logger.error(f"Fehler bei der Verarbeitung des Updates: {e}")
         return 'ok'
@@ -107,31 +107,31 @@ application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 application.add_error_handler(error_handler)  # Füge den Fehlerhandler hinzu
 
-
 # Port für Flask setzen
 PORT = int(os.environ.get("PORT", 5000))
 
-def run_telegram_bot():  # Separate Funktion für Telegram Bot
+def run_telegram_bot():
     async def set_webhook_and_initialize():
-        await bot.set_webhook("https://tele2-pnhl.onrender.com/")  # Deine Webhook-URL
+        await bot.set_webhook("https://tele2-pnhl.onrender.com/")  # Deine Webhook-URL  (SICHERSTELLEN, DASS DIES KORREKT IST!)
         await application.initialize()
 
-    loop = asyncio.new_event_loop()  # Neuen Event Loop erstellen
-    asyncio.set_event_loop(loop)  # Neuen Loop als Standard setzen
-    loop.run_until_complete(set_webhook_and_initialize())
+    async def bot_main():
+        await set_webhook_and_initialize()
+        await application.run_polling()  # Verwende Polling im Bot-Thread
 
-    # Starte die Application im selben Loop
-    try:
-        loop.run_forever()  # Bot-Anwendung am Laufen halten
-    finally:  # Sicherstellen, dass der Loop geschlossen wird
-        loop.close()
-
+    asyncio.run(bot_main())  # Starte und verwalte den Event Loop korrekt
 
 if __name__ == "__main__":
     # Starte den Flask-Server in einem separaten Thread
     flask_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=PORT))
-    flask_thread.daemon = True  # Erlaubt dem Hauptthread das Beenden, auch wenn Flask läuft
+    flask_thread.daemon = True  # Erlaubt dem Hauptthread das Beenden
     flask_thread.start()
 
-    # Starte den Telegram-Bot im Hauptthread mit seinem Event Loop
-    run_telegram_bot()
+    # Starte den Telegram-Bot in einem *separaten* Thread
+    telegram_thread = Thread(target=run_telegram_bot)
+    telegram_thread.daemon = True  # Erlaubt dem Hauptthread das Beenden
+    telegram_thread.start()
+
+    # Halte den Hauptthread am Laufen (oder mache andere Dinge)
+    while True:
+        time.sleep(10)
