@@ -2,46 +2,45 @@ import os
 import logging
 import openai
 import telegram
-from flask import Flask
+from flask import Flask, request
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
-import time
-from threading import Thread
 import asyncio
+from threading import Thread
 
-#  Umgebungsvariablen für API-Keys
+# 🔹 Umgebungsvariablen für API-Keys
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-#  Logging einrichten
+# 🔹 Logging einrichten
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-#  Flask App initialisieren
+# 🔹 Flask App initialisieren
 app = Flask(__name__)
 
-#  OpenAI-Client initialisieren
+# 🔹 OpenAI-Client initialisieren
 openai.api_key = OPENAI_API_KEY
 
-#  Telegram-Bot initialisieren
+# 🔹 Telegram-Bot initialisieren
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-#  Funktion zum Generieren von Textantworten mit OpenAI GPT-4o
+# 🔹 Funktion zum Generieren von Textantworten mit OpenAI GPT-4o
 def generate_response(message):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
+            {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit Jugendsprache."},
             {"role": "user", "content": message},
         ],
         max_tokens=1500,
     )
     return response.choices[0].message.content.strip()
 
-#  Funktion zum Generieren von Bildern mit OpenAI DALL·E-3
+# 🔹 Funktion zum Generieren von Bildern mit OpenAI DALL·E-3
 def generate_image(prompt):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.images.generate(
@@ -53,15 +52,15 @@ def generate_image(prompt):
     )
     return response.data[0].url
 
-#  /start Befehl
+# 🔹 /start Befehl
 async def start(update, context):
     await update.message.reply_text("Hallo! Ich bin dein AI-Chatbot. Stelle mir eine Frage oder schicke mir eine Bildbeschreibung!")
 
-#  /help Befehl
+# 🔹 /help Befehl
 async def help_command(update, context):
     await update.message.reply_text("Sende mir eine Nachricht, und ich werde mit AI antworten! Falls du ein Bild generieren willst, schreib: 'Erstelle ein Bild von...'")
 
-#  Nachricht-Handler für alle Texteingaben
+# 🔹 Nachricht-Handler für alle Texteingaben
 async def handle_message(update, context):
     message = update.message.text
 
@@ -76,37 +75,27 @@ async def handle_message(update, context):
         response = generate_response(message)
         await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
-#  Fehlerbehandlung
+# 🔹 Fehlerbehandlung
 async def error_handler(update, context):
     logger.error(f"Fehler: {context.error}")
 
-#  Flask-Route für den Webserver
+# 🔹 Flask-Route für den Webserver
 @app.route('/')
 def home():
     return "Bot is running!"
 
-#  Handler hinzufügen
+# 🔹 Handler hinzufügen
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-#  Port für Flask setzen
+# 🔹 Port für Flask setzen
 PORT = int(os.environ.get("PORT", 5000))
 
-#  Hauptprogramm: Flask und Polling korrekt starten
+# 🔹 Hauptprogramm: Flask und Telegram Polling starten
 if __name__ == "__main__":
-    # 1. Get the event loop
-    loop = asyncio.get_event_loop()
+    # Starte den Flask-Server in einem separaten Thread
+    Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
 
-    # 2. Start the Flask server in a separate thread (use_reloader=False ist entscheidend)
-    Thread(target=lambda: app.run(host="0.0.0.0", port=PORT, use_reloader=False)).start()
-
-    # 3. Start the Telegram bot polling in the main thread using the same loop
-    try:
-        loop.run_until_complete(application.run_polling())
-    except Exception as e:
-        logger.error(f"Fatal error during polling: {e}")
-    finally:
-        # Ensure the application stops cleanly
-        loop.run_until_complete(application.stop())
-        loop.close()
+    # Starte Telegram-Polling mit Fehler-Neustart
+    asyncio.run(application.run_polling(allowed_updates=telegram.constants.Update.ALL_TYPES, restart_on_failure=True))
