@@ -104,7 +104,7 @@ if __name__ == "__main__":
     Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
 
     async def set_webhook_async():
-        await bot.set_webhook(f"https://tele2-pnhl.onrender.com/{TELEGRAM_BOT_TOKEN}")
+        await bot.set_webhook(f"https://tele2-pnhl.onrender.com/7711689040:AAHmXeuKFF3dBMtOJS2Wj1BOfOvqbf7EBzw")
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(set_webhook_async())
