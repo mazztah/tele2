@@ -30,7 +30,7 @@ def generate_response(message):
     try:
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
         response = client.chat.completions.create(
-            model="gpt-4-0613", # or gpt-3.5-turbo
+            model="gpt-4-0613",  # or gpt-3.5-turbo
             messages=[
                 {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
                 {"role": "user", "content": message},
@@ -120,13 +120,17 @@ def run_telegram_bot():
         await set_webhook_and_initialize()
         await application.run_polling()  # Verwende Polling im Bot-Thread
 
+    loop = asyncio.new_event_loop()  # Neuen Event Loop erstellen
+    asyncio.set_event_loop(loop)  # Neuen Loop als Standard setzen
+
     try:
-        asyncio.run(bot_main())  # Starte und verwalte den Event Loop korrekt
-    except RuntimeError as e:
-        if "This event loop is already running" in str(e):  # Behandle bereits laufenden Loop
-            pass  # Dies ist normalerweise harmlos in diesem Kontext
-        else:
-            raise  # Andere RuntimeErrors erneut auslösen
+        loop.run_until_complete(bot_main())  # Initialisiere den Bot
+        loop.run_forever()  # Bot am Laufen halten
+
+    finally:  # Stelle sicher, dass der Loop geschlossen wird
+        application.shutdown()  # Shutdown planen
+        loop.run_until_complete(application.shutdown())  # Warte auf den Abschluss des Shutdowns
+        loop.close()
 
 
 if __name__ == "__main__":
