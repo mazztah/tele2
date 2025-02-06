@@ -113,7 +113,7 @@ PORT = int(os.environ.get("PORT", 5000))
 
 def run_telegram_bot():
     async def set_webhook_and_initialize():
-        await bot.set_webhook("https://tele2-pnhl.onrender.com/")  # Deine Webhook-URL (SICHERSTELLEN, DASS DIES KORREKT IST!)
+        await bot.set_webhook("https://tele2-pnhl.onrender.com")  # Deine Webhook-URL (SICHERSTELLEN, DASS DIES KORREKT IST!)
         await application.initialize()
 
     async def bot_main():
