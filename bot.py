@@ -113,7 +113,7 @@ PORT = int(os.environ.get("PORT", 5000))
 
 def run_telegram_bot():
     async def set_webhook_and_initialize():
-        await bot.set_webhook("https://tele2-pnhl.onrender.com")  # Deine Webhook-URL (SICHERSTELLEN, DASS DIES KORREKT IST!)
+        await bot.set_webhook("https://tele2-pnhl.onrender.com/")  # Deine Webhook-URL (SICHERSTELLEN, DASS DIES KORREKT IST!)
         await application.initialize()
 
     async def bot_main():
@@ -126,6 +126,9 @@ def run_telegram_bot():
     try:
         loop.run_until_complete(bot_main())  # Initialisiere den Bot
         loop.run_forever()  # Bot am Laufen halten
+
+    except Exception as e:
+        logger.exception("Fehler in bot_main:")  # Log die *vollen* Exception-Details
 
     finally:  # Stelle sicher, dass der Loop geschlossen wird
         application.shutdown()  # Shutdown planen
@@ -140,4 +143,10 @@ if __name__ == "__main__":
     flask_thread.start()
 
     # Starte den Telegram-Bot im *Hauptthread*
-    run_telegram_bot()
+    telegram_thread = Thread(target=run_telegram_bot)
+    telegram_thread.daemon = True  # Erlaubt dem Hauptthread das Beenden
+    telegram_thread.start()
+
+    # Halte den Hauptthread am Laufen (oder mache andere Dinge)
+    while True:
+        time.sleep(10)
