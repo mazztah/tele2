@@ -101,7 +101,7 @@ if __name__ == "__main__":
     Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
 
     # Set up the webhook
-    bot.set_webhook(f"YOUR_WEBHOOK_URL/{TELEGRAM_BOT_TOKEN}") # Replace with your webhook URL
+    bot.set_webhook(f"https://tele2-pnhl.onrender.com/{TELEGRAM_BOT_TOKEN}") # Replace with your webhook URL
 
     # Keep the main thread alive (you might need a more robust solution for production)
     while True:
