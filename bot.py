@@ -30,28 +30,36 @@ application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 # Funktion zum Generieren von Textantworten mit OpenAI GPT-4
 def generate_response(message):
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
-            {"role": "user", "content": message},
-        ],
-        max_tokens=1500,
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech und gelangweilt mit jugendsprache"},
+                {"role": "user", "content": message},
+            ],
+            max_tokens=1500,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Fehler bei OpenAI-Anfrage: {e}")
+        return "Es gab ein Problem mit der OpenAI-API."  # Rückmeldung an den Benutzer
 
 # Funktion zum Generieren von Bildern mit OpenAI DALL·E-3
 def generate_image(prompt):
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.images.generate(
-        model="dall-e-3",
-        prompt=prompt,
-        size="1024x1024",
-        quality="hd",
-        n=1,
-    )
-    return response.data[0].url
+    try:
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="hd",
+            n=1,
+        )
+        return response.data[0].url
+    except Exception as e:
+        logger.error(f"Fehler bei DALL·E-Anfrage: {e}")
+        return None  # Keine Bild-URL zurückgeben
 
 # /start Befehl
 async def start(update, context):
@@ -71,14 +79,17 @@ async def handle_message(update, context):
         prompt = prompt.replace("generate an image of", "").strip()
 
         image_url = generate_image(prompt)
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+        if image_url:
+            await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+        else:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Es gab ein Problem bei der Bildgenerierung.")
     else:
         response = generate_response(message)
         await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
 # Fehlerbehandlung
 async def error_handler(update, context):
-    logger.error(f"Fehler: {context.error}")
+    logger.error(f"Update {update} verursachte folgenden Fehler: {context.error}")
 
 # Flask-Route für den Webhook
 @app.route('/', methods=['GET', 'POST'])
@@ -94,6 +105,7 @@ async def webhook():
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+application.add_error_handler(error_handler)  # Füge den Fehlerhandler hinzu
 
 # Port für Flask setzen
 PORT = int(os.environ.get("PORT", 5000))
