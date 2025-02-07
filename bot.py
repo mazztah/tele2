@@ -112,3 +112,4 @@ if __name__ == "__main__":
         # Kurze Pause, bevor ein neuer Polling-Versuch gestartet wird
         time.sleep(5)
 
+
