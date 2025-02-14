@@ -10,7 +10,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 # Umgebungsvariablen abrufen
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # z. B. "https://deinedomain.de/webhook"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # z.B. "https://deinedomain.de/webhook"
 
 # Logging einrichten
 logging.basicConfig(
@@ -55,8 +55,8 @@ async def handle_message(update, context):
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# ─────────────────────────────
-# Globalen Event Loop in eigenem Thread starten
+# ───────────────────────────────────────────────────────────────
+# Globalen Event Loop in einem separaten Thread starten
 global_loop = asyncio.new_event_loop()
 
 def start_loop(loop):
@@ -65,7 +65,7 @@ def start_loop(loop):
 
 loop_thread = threading.Thread(target=start_loop, args=(global_loop,), daemon=True)
 loop_thread.start()
-# ─────────────────────────────
+# ───────────────────────────────────────────────────────────────
 
 # Webhook-Route: Telegram sendet hier Updates
 @app.route('/webhook', methods=['POST'])
@@ -73,8 +73,6 @@ def webhook():
     update_json = request.get_json(force=True)
     logger.info(f"Webhook erhalten: {update_json}")
     update = telegram.Update.de_json(update_json, bot)
-    # Debug: Prüfe, ob der Loop läuft:
-    logger.info(f"global_loop is running: {global_loop.is_running()}")
     # Den asynchronen Task im globalen Loop einplanen:
     asyncio.run_coroutine_threadsafe(application.process_update(update), global_loop)
     return "OK", 200
@@ -84,13 +82,20 @@ def home():
     return "Bot is running!", 200
 
 if __name__ == '__main__':
-    async def set_webhook():
+    async def startup():
+        # Webhook setzen
         await bot.delete_webhook()
         success = await bot.set_webhook(WEBHOOK_URL)
         if success:
             logger.info(f"Webhook erfolgreich gesetzt: {WEBHOOK_URL}")
         else:
             logger.error("Webhook konnte nicht gesetzt werden!")
+        # **Wichtig: Application initialisieren und starten!**
+        await application.initialize()
+        await application.start()
+
+    # Startup-Aufgaben im globalen Loop ausführen
+    asyncio.run(startup())
     
-    asyncio.run(set_webhook())
+    # Flask-Server starten
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
