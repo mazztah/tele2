@@ -37,7 +37,7 @@ application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 def generate_response(message: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech."},
             {"role": "user", "content": message},
@@ -45,6 +45,9 @@ def generate_response(message: str) -> str:
         max_tokens=1500,
     )
     return response.choices[0].message.content.strip()
+
+
+
 
 # /start-Befehl
 async def start(update, context):
