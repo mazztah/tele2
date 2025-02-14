@@ -4,11 +4,13 @@ import openai
 import telegram
 from flask import Flask, request
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
+import time
+from threading import Thread
+import asyncio
 
-# 🔹 Umgebungsvariablen abrufen
+# 🔹 Umgebungsvariablen für API-Keys
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Setze deine Webhook-URL
 
 # 🔹 Logging einrichten
 logging.basicConfig(
@@ -39,6 +41,18 @@ def generate_response(message):
     )
     return response.choices[0].message.content.strip()
 
+# 🔹 Funktion zum Generieren von Bildern mit OpenAI DALL·E-3
+def generate_image(prompt):
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    response = client.images.generate(
+        model="dall-e-3",
+        prompt=prompt,
+        size="1024x1024",
+        quality="hd",
+        n=1,
+    )
+    return response.data[0].url
+
 # 🔹 /start Befehl
 async def start(update, context):
     await update.message.reply_text("Hallo! Ich bin dein AI-Chatbot. Stelle mir eine Frage oder schicke mir eine Bildbeschreibung!")
@@ -50,47 +64,52 @@ async def help_command(update, context):
 # 🔹 Nachricht-Handler für alle Texteingaben
 async def handle_message(update, context):
     message = update.message.text
-    response = generate_response(message)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
+
+    # Prüfen, ob der Benutzer ein Bild generieren möchte
+    if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
+        prompt = message.replace("erstelle ein bild von", "").strip()
+        prompt = prompt.replace("generate an image of", "").strip()
+
+        image_url = generate_image(prompt)
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+    else:
+        response = generate_response(message)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
 # 🔹 Fehlerbehandlung
 async def error_handler(update, context):
     logger.error(f"Fehler: {context.error}")
 
-# 🔹 Webhook-Handler für Telegram
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Telegram sendet Updates an diesen Endpoint"""
-    update = telegram.Update.de_json(request.get_json(force=True), bot)
-    application.update_queue.put_nowait(update)
-    return "OK", 200
-
 # 🔹 Flask-Route für den Webserver
 @app.route('/')
 def home():
-    return "Bot ist aktiv!", 200
+    return "Bot is running!"
 
-async def main():
-    """Initialisiert und startet die Telegram-App mit Webhook"""
-    # Handler registrieren
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_error_handler(error_handler)
+# 🔹 Handler hinzufügen
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Webhook für Telegram-Bot setzen
-    await bot.set_webhook(url=WEBHOOK_URL)
+# 🔹 Port für Flask setzen
+PORT = int(os.environ.get("PORT", 5000))
 
-    logger.info("Bot ist bereit mit Webhook!")
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()  # Optional für Debugging
+# 🔹 Hauptprogramm: Flask und Polling in einer Endlosschleife starten
+if __name__ == "__main__":
+    # Starte den Flask-Server in einem separaten Thread
+    Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
 
-if __name__ == '__main__':
-    import asyncio
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
-    
-    # Flask starten
-    app.run(host="0.0.0.0", port=5000)
+    while True:
+        try:
+            # Erstelle einen neuen Event Loop für jeden Durchlauf
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            logger.info("Starte Polling...")
+            loop.run_until_complete(application.run_polling())
+        except Exception as e:
+            logger.error(f"Fehler beim Polling: {e}")
+        finally:
+            loop.close()
+        # Kurze Pause, bevor ein neuer Polling-Versuch gestartet wird
+        time.sleep(5)
+
 
