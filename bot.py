@@ -4,8 +4,6 @@ import openai
 import telegram
 from flask import Flask, request
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
-import time
-from threading import Thread
 import asyncio
 
 # 🔹 Umgebungsvariablen für API-Keys
@@ -85,6 +83,14 @@ async def error_handler(update, context):
 def home():
     return "Bot is running!"
 
+# 🔹 Webhook-Route für Telegram
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json(force=True)
+    update = telegram.Update.de_json(data, bot)
+    application.process_update(update)
+    return "OK", 200
+
 # 🔹 Handler hinzufügen
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
@@ -93,23 +99,16 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_m
 # 🔹 Port für Flask setzen
 PORT = int(os.environ.get("PORT", 5000))
 
-# 🔹 Hauptprogramm: Flask und Polling in einer Endlosschleife starten
+# 🔹 Hauptprogramm: Webhook statt Polling nutzen
 if __name__ == "__main__":
-    # Starte den Flask-Server in einem separaten Thread
-    Thread(target=lambda: app.run(host="0.0.0.0", port=PORT)).start()
+    # Webhook setzen
+    import requests
+    webhook_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url=https://tele2-pnhl.onrender.com/webhook"
+    response = requests.get(webhook_url)
+    if response.status_code == 200:
+        logger.info("Webhook erfolgreich gesetzt!")
+    else:
+        logger.error("Fehler beim Setzen des Webhooks!")
 
-    while True:
-        try:
-            # Erstelle einen neuen Event Loop für jeden Durchlauf
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            logger.info("Starte Polling...")
-            loop.run_until_complete(application.run_polling())
-        except Exception as e:
-            logger.error(f"Fehler beim Polling: {e}")
-        finally:
-            loop.close()
-        # Kurze Pause, bevor ein neuer Polling-Versuch gestartet wird
-        time.sleep(5)
-
-
+    # Flask starten
+    app.run(host="0.0.0.0", port=PORT, debug=True)
