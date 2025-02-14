@@ -28,7 +28,7 @@ openai.api_key = OPENAI_API_KEY
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# Funktionen für OpenAI-Antworten
+# Beispiel-Funktionen
 def generate_response(message):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
@@ -41,49 +41,22 @@ def generate_response(message):
     )
     return response.choices[0].message.content.strip()
 
-def generate_image(prompt):
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.images.generate(
-        model="dall-e-3",
-        prompt=prompt,
-        size="1024x1024",
-        quality="hd",
-        n=1,
-    )
-    return response.data[0].url
-
 # /start Befehl
 async def start(update, context):
     await update.message.reply_text("Hallo! Ich bin dein AI-Chatbot. Stelle mir eine Frage oder schicke mir eine Bildbeschreibung!")
 
-# /help Befehl
-async def help_command(update, context):
-    await update.message.reply_text("Sende mir eine Nachricht, und ich antworte mit AI. Für ein Bild: 'Erstelle ein Bild von...'")
-
 # Nachricht-Handler
 async def handle_message(update, context):
     message = update.message.text
-    if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
-        prompt = message.replace("erstelle ein bild von", "").strip()
-        prompt = prompt.replace("generate an image of", "").strip()
-        image_url = generate_image(prompt)
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
-    else:
-        response = generate_response(message)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
-
-# Fehlerbehandlung
-async def error_handler(update, context):
-    logger.error(f"Fehler: {context.error}")
+    response = generate_response(message)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
 # Handler registrieren
 application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-application.add_error_handler(error_handler)
 
-# ───────────────────────────────────────────────────────────────
-# Globalen Event Loop in einem separaten Thread starten
+# ─────────────────────────────
+# Globalen Event Loop in eigenem Thread starten
 global_loop = asyncio.new_event_loop()
 
 def start_loop(loop):
@@ -92,7 +65,7 @@ def start_loop(loop):
 
 loop_thread = threading.Thread(target=start_loop, args=(global_loop,), daemon=True)
 loop_thread.start()
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────
 
 # Webhook-Route: Telegram sendet hier Updates
 @app.route('/webhook', methods=['POST'])
@@ -100,18 +73,17 @@ def webhook():
     update_json = request.get_json(force=True)
     logger.info(f"Webhook erhalten: {update_json}")
     update = telegram.Update.de_json(update_json, bot)
-    # Asynchronen Task im globalen Loop ausführen
+    # Debug: Prüfe, ob der Loop läuft:
+    logger.info(f"global_loop is running: {global_loop.is_running()}")
+    # Den asynchronen Task im globalen Loop einplanen:
     asyncio.run_coroutine_threadsafe(application.process_update(update), global_loop)
-    # Mit HTTP-200 antworten, damit Telegram weiß, dass der Update empfangen wurde
     return "OK", 200
 
-# Einfache Home-Route
 @app.route('/')
 def home():
     return "Bot is running!", 200
 
 if __name__ == '__main__':
-    # Webhook beim Start löschen und neu setzen
     async def set_webhook():
         await bot.delete_webhook()
         success = await bot.set_webhook(WEBHOOK_URL)
@@ -120,8 +92,5 @@ if __name__ == '__main__':
         else:
             logger.error("Webhook konnte nicht gesetzt werden!")
     
-    # Setze Webhook im globalen Loop
     asyncio.run(set_webhook())
-    
-    # Flask-Server starten (dieser bleibt aktiv und reagiert auf eingehende Nachrichten)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
