@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import threading
 import openai
 import telegram
 from flask import Flask, request
@@ -81,14 +82,26 @@ application.add_handler(CommandHandler("help", help_command))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 application.add_error_handler(error_handler)
 
+# ───────────────────────────────────────────────────────────────
+# Globalen Event Loop in einem separaten Thread starten
+global_loop = asyncio.new_event_loop()
+
+def start_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+loop_thread = threading.Thread(target=start_loop, args=(global_loop,), daemon=True)
+loop_thread.start()
+# ───────────────────────────────────────────────────────────────
+
 # Webhook-Route: Telegram sendet hier Updates
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update_json = request.get_json(force=True)
     logger.info(f"Webhook erhalten: {update_json}")
     update = telegram.Update.de_json(update_json, bot)
-    # Asynchronen Task starten, um die Update-Verarbeitung nicht blockierend zu gestalten
-    asyncio.create_task(application.process_update(update))
+    # Asynchronen Task im globalen Loop ausführen
+    asyncio.run_coroutine_threadsafe(application.process_update(update), global_loop)
     # Mit HTTP-200 antworten, damit Telegram weiß, dass der Update empfangen wurde
     return "OK", 200
 
@@ -107,8 +120,8 @@ if __name__ == '__main__':
         else:
             logger.error("Webhook konnte nicht gesetzt werden!")
     
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(set_webhook())
+    # Setze Webhook im globalen Loop
+    asyncio.run(set_webhook())
     
     # Flask-Server starten (dieser bleibt aktiv und reagiert auf eingehende Nachrichten)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
