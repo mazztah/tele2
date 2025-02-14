@@ -26,7 +26,7 @@ app = Flask(__name__)
 openai.api_key = OPENAI_API_KEY
 
 # Erstelle einen benutzerdefinierten Request-Adapter, um Poolgröße/Timeout zu erhöhen
-request_instance = HTTPXRequest(pool_timeout=20, pool_size=20)
+request_instance = HTTPXRequest(pool_timeout=20)
 
 # Bot und Application initialisieren (verwende den benutzerdefinierten Request)
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN, request=request_instance)
