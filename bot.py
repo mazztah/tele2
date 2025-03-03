@@ -9,7 +9,21 @@ from flask import Flask, request
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
-# Umgebungsvariablen (z. B. via .env-Datei setzen)
+# Zusätzliche Bibliotheken für die Dateiextraktion
+try:
+    import PyPDF2
+except ImportError:
+    PyPDF2 = None
+try:
+    import docx
+except ImportError:
+    docx = None
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+# Umgebungsvariablen (z.B. via .env-Datei setzen)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # z.B. "https://deinedomain.de/webhook"
@@ -29,18 +43,21 @@ request_instance = HTTPXRequest(pool_timeout=20)
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN, request=request_instance)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# Globaler Chatverlauf pro Chat (Speicherung als Liste von Nachrichten)
+# Globaler Chatverlauf pro Chat (Liste von Nachrichten)
 chat_histories = {}
+# Globaler Speicher für verarbeitete Dokumente: doc_texts speichert pro Chat die extrahierten Inhalte
+doc_texts = {}
 
 def get_chat_history(chat_id: str):
     if chat_id not in chat_histories:
         chat_histories[chat_id] = [{
             "role": "system",
-            "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech."
+            "content": ("You are an AI assistant for a Telegram bot. Answer concisely and helpfully. "
+                        "Manchmal ironisch und frech.")
         }]
     return chat_histories[chat_id]
 
-# OpenAI-Funktion zur Generierung von Textantworten (GPT-4)
+# OpenAI-Funktion: Generierung von Textantworten (GPT-4)
 def generate_response(chat_id: str, message: str) -> str:
     history = get_chat_history(chat_id)
     history.append({"role": "user", "content": message})
@@ -54,17 +71,17 @@ def generate_response(chat_id: str, message: str) -> str:
     history.append({"role": "assistant", "content": reply})
     return reply
 
-# OpenAI-Funktion zur Sprachgenerierung (Text-zu-Speech)
+# OpenAI-Funktion: Sprachgenerierung (Text-zu-Speech)
 def generate_audio_response(text: str) -> bytes:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.audio.speech.create(
-        model="tts-1",    # Korrigiert: Modell für TTS ist "tts-1"
+        model="tts-1",  # TTS-Modell laut Dokumentation
         voice="alloy",
         input=text
     )
     return response.content
 
-# OpenAI-Funktion zur Sprachanalyse (Transkription via Whisper)
+# OpenAI-Funktion: Sprachanalyse (Transkription via Whisper)
 def transcribe_audio(audio_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(audio_path, "rb") as audio_file:
@@ -73,10 +90,10 @@ def transcribe_audio(audio_path: str) -> str:
             file=audio_file,
             response_format="text"
         )
-    # Da response_format="text" verwendet wird, liefert die API bereits einen String zurück.
+    # Die API liefert bereits einen String zurück, wenn response_format="text" gewählt wurde.
     return transcription
 
-# OpenAI-Funktion zur Bildanalyse via Vision API (ursprünglich funktionierend)
+# OpenAI-Funktion: Bildanalyse via Vision API (ursprünglich funktionierend)
 def analyze_image(image_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(image_path, "rb") as image_file:
@@ -93,7 +110,7 @@ def analyze_image(image_path: str) -> str:
     )
     return response.choices[0].message.content
 
-# OpenAI-Funktion zur Bilderstellung (DALL·E‑3)
+# OpenAI-Funktion: Bilderstellung (DALL·E‑3)
 def generate_image(prompt: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.images.generate(
@@ -105,9 +122,111 @@ def generate_image(prompt: str) -> str:
     )
     return response.data[0].url
 
+# Neuer Handler: Dateiupload und -verarbeitung
+async def handle_document(update, context):
+    chat_id = str(update.effective_chat.id)
+    document = update.message.document
+    file_name = document.file_name
+    file = await bot.get_file(document.file_id)
+    local_path = f"temp_{document.file_id}_{file_name}"
+    await file.download_to_drive(local_path)
+    
+    ext = file_name.split('.')[-1].lower()
+    extracted_text = ""
+    
+    if ext == "pdf":
+        if PyPDF2 is None:
+            extracted_text = "PyPDF2 ist nicht installiert."
+        else:
+            try:
+                with open(local_path, "rb") as f:
+                    reader = PyPDF2.PdfReader(f)
+                    for page in reader.pages:
+                        extracted_text += page.extract_text() + "\n"
+            except Exception as e:
+                extracted_text = f"Fehler beim Lesen der PDF: {e}"
+    elif ext in ["doc", "docx"]:
+        if docx is None:
+            extracted_text = "python-docx ist nicht installiert."
+        else:
+            try:
+                doc = docx.Document(local_path)
+                for para in doc.paragraphs:
+                    extracted_text += para.text + "\n"
+            except Exception as e:
+                extracted_text = f"Fehler beim Lesen des Dokuments: {e}"
+    elif ext in ["xls", "xlsx"]:
+        if pd is None:
+            extracted_text = "pandas (und openpyxl) sind nicht installiert."
+        else:
+            try:
+                df = pd.read_excel(local_path)
+                extracted_text = df.to_csv(index=False)
+            except Exception as e:
+                extracted_text = f"Fehler beim Lesen der Excel-Datei: {e}"
+    elif ext == "txt":
+        try:
+            with open(local_path, "r", encoding="utf-8") as f:
+                extracted_text = f.read()
+        except Exception as e:
+            extracted_text = f"Fehler beim Lesen der Textdatei: {e}"
+    else:
+        extracted_text = "Dateiformat nicht unterstützt."
+    
+    # Speicher das extrahierte Dokument im globalen doc_texts
+    doc_texts[chat_id] = extracted_text
+    
+    # Erstelle optional eine Zusammenfassung (nur wenn extrahierter Text sinnvoll erscheint)
+    if extracted_text and "nicht unterstützt" not in extracted_text and not extracted_text.startswith("Fehler"):
+        prompt = f"Fasse den folgenden Text zusammen:\n\n{extracted_text[:4000]}"
+        summary = generate_response(chat_id, prompt)
+    else:
+        summary = extracted_text
+
+    # Sende Rückmeldung an den Nutzer
+    message = f"Dokument '{file_name}' verarbeitet.\nZusammenfassung:\n{summary}\n\nDu kannst nun Fragen zum Dokument stellen mit /askdoc <deine Frage>.\nFalls du den vollständigen Text herunterladen möchtest, benutze /download_document."
+    await context.bot.send_message(chat_id=chat_id, text=message)
+    
+    # Lösche die temporäre Datei
+    os.remove(local_path)
+
+# Neuer Handler: Fragen zum zuletzt hochgeladenen Dokument beantworten
+async def handle_askdoc(update, context):
+    chat_id = str(update.effective_chat.id)
+    if chat_id not in doc_texts or not doc_texts[chat_id]:
+        await context.bot.send_message(chat_id=chat_id, text="Es wurde noch kein Dokument verarbeitet.")
+        return
+    # Die Frage extrahieren (alles nach dem Befehl)
+    question = update.message.text.replace("/askdoc", "").strip()
+    if not question:
+        await context.bot.send_message(chat_id=chat_id, text="Bitte stelle deine Frage nach dem Befehl.")
+        return
+    # Generiere eine Antwort basierend auf dem Dokument
+    prompt = f"Beantworte folgende Frage basierend auf diesem Dokument:\n\nDokument:\n{doc_texts[chat_id][:4000]}\n\nFrage: {question}"
+    answer = generate_response(chat_id, prompt)
+    await context.bot.send_message(chat_id=chat_id, text=answer)
+
+# Neuer Handler: Herunterladen des vollständigen Dokuments (als Textdatei)
+async def handle_download_document(update, context):
+    chat_id = str(update.effective_chat.id)
+    if chat_id not in doc_texts or not doc_texts[chat_id]:
+        await context.bot.send_message(chat_id=chat_id, text="Es wurde noch kein Dokument verarbeitet.")
+        return
+    # Erstelle eine temporäre Datei aus dem gespeicherten Text
+    output_filename = f"processed_document_{chat_id}.txt"
+    with open(output_filename, "w", encoding="utf-8") as out_file:
+        out_file.write(doc_texts[chat_id])
+    await context.bot.send_document(chat_id=chat_id, document=open(output_filename, "rb"), filename=output_filename)
+    os.remove(output_filename)
+
 # Handler für den /start-Befehl
 async def start(update, context):
-    await update.message.reply_text("Hallo! Ich bin dein AI-gestützter Telegram-Bot. Sende mir eine Nachricht, ein Bild oder eine Sprachnachricht, und ich werde antworten!")
+    await update.message.reply_text(
+        "Hallo! Ich bin dein AI-gestützter Telegram-Bot.\n"
+        "Du kannst mir Nachrichten, Bilder, Sprachnachrichten oder Dokumente (PDF, DOCX, XLS/XLSX, TXT) senden.\n"
+        "Bei Dokumenten extrahiere ich den Inhalt und erstelle eine Zusammenfassung. Anschließend kannst du "
+        "mit /askdoc Fragen zum Dokument stellen oder mit /download_document den vollständigen Text herunterladen."
+    )
 
 # Handler für Textnachrichten
 async def handle_message(update, context):
@@ -158,8 +277,7 @@ async def handle_voice(update, context):
     text = transcribe_audio(audio_path)
     os.remove(audio_path)
     
-    # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text,
-    # ansonsten als Sprachnachricht.
+    # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text, ansonsten als Sprachnachricht.
     if "text" in text.lower():
         reply = generate_response(chat_id, text)
         await context.bot.send_message(chat_id=chat_id, text=reply)
@@ -184,7 +302,10 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(MessageHandler(filters.VOICE, handle_voice))
+application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 application.add_handler(CommandHandler("generate", handle_generate_image))
+application.add_handler(CommandHandler("askdoc", handle_askdoc))
+application.add_handler(CommandHandler("download_document", handle_download_document))
 
 # Webhook-Route: Hier empfängt der Bot Updates von Telegram
 @app.route('/webhook', methods=['POST'])
