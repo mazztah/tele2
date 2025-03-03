@@ -64,17 +64,42 @@ def generate_audio_response(text: str) -> bytes:
     )
     return response.content
 
-# OpenAI-Funktion zur Sprachanalyse (Transkription)
+# OpenAI-Funktion zur Sprachanalyse (Voice Input nach offizieller Dokumentation)
 def transcribe_audio(audio_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(audio_path, "rb") as audio_file:
-        response = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            response_format="text"
-        )
-    # Da response_format="text" gewählt wurde, liefert die API direkt einen String zurück.
-    return response
+        wav_data = audio_file.read()
+    encoded_string = base64.b64encode(wav_data).decode("utf-8")
+    
+    # Hier wird ein Chat-Request an das Modell "gpt-4o-audio-preview" gesendet,
+    # das sowohl Text als auch Audio als Input unterstützt.
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                { 
+                    "type": "text",
+                    "text": "Transkribiere bitte das folgende Audio:"
+                },
+                {
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": encoded_string,
+                        "format": "wav"
+                    }
+                }
+            ]
+        }
+    ]
+    
+    response = client.chat.completions.create(
+         model="gpt-4o-audio-preview",
+         modalities=["text", "audio"],
+         audio={"voice": "alloy", "format": "wav"},
+         messages=messages
+    )
+    # Es wird davon ausgegangen, dass die Antwort den transkribierten Text enthält.
+    return response.choices[0].message.content.strip()
 
 # OpenAI-Funktion zur Bildanalyse via Vision API (ursprünglich funktionierend)
 def analyze_image(image_path: str) -> str:
@@ -147,7 +172,7 @@ async def handle_generate_image(update, context):
     image_url = generate_image(prompt)
     await context.bot.send_photo(chat_id=chat_id, photo=image_url)
 
-# Handler für Sprachnachrichten
+# Handler für Sprachnachrichten (Voice-Input via GPT-4o-Audio-Preview)
 async def handle_voice(update, context):
     chat_id = str(update.effective_chat.id)
     voice = update.message.voice
