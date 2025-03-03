@@ -76,21 +76,22 @@ def transcribe_audio(audio_path: str) -> str:
     )
     return response.text
 
-# OpenAI-Funktion zur Bildanalyse (simuliert via Base64-Übertragung an GPT-4)
+# OpenAI-Funktion zur Bildanalyse via Vision API (ursprünglich funktionierend)
 def analyze_image(image_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(image_path, "rb") as image_file:
-        image_data = image_file.read()
-    base64_image = base64.b64encode(image_data).decode("utf-8")
-    # Da es keine dedizierte Bildanalyse-Funktion gibt, senden wir das Bild als Base64-kodierten String
+        base64_image = base64.b64encode(image_file.read()).decode("utf-8")
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
-            {"role": "user", "content": f"Beschreibe bitte das folgende Bild: data:image/jpeg;base64,{base64_image}"}
+            {"role": "user", "content": [
+                {"type": "text", "text": "Was ist auf diesem Bild zu sehen?"},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+            ]},
         ],
         max_tokens=300,
     )
-    return response.choices[0].message.content.strip()
+    return response.choices[0].message.content
 
 # OpenAI-Funktion zur Bilderstellung (DALL·E‑3)
 def generate_image(prompt: str) -> str:
@@ -157,7 +158,7 @@ async def handle_voice(update, context):
     text = transcribe_audio(audio_path)
     os.remove(audio_path)
     
-    # Wenn im transkribierten Text explizit "text" erwähnt wird, antworte als Text,
+    # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text,
     # ansonsten antworte mit einer Sprachnachricht.
     if "text" in text.lower():
         reply = generate_response(chat_id, text)
