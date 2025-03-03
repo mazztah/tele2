@@ -179,7 +179,7 @@ async def handle_voice(update, context):
     text = transcribe_audio(audio_path)
     os.remove(audio_path)
     
-    # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text,
+    # Wenn im transkribierten Text "text" erwähnt wird, antworte als Tex
     # ansonsten antworte mit einer Sprachnachricht.
     if "text" in text.lower():
         reply = generate_response(chat_id, text)
