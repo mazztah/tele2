@@ -64,38 +64,16 @@ def generate_audio_response(text: str) -> bytes:
     )
     return response.content
 
-# OpenAI-Funktion zur Sprachanalyse (Voice-Input) – offizielle Dokumentation, angepasst ohne "modalities"
+# OpenAI-Funktion zur Sprachanalyse (Transkription via Whisper)
 def transcribe_audio(audio_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(audio_path, "rb") as audio_file:
-        wav_data = audio_file.read()
-    encoded_string = base64.b64encode(wav_data).decode("utf-8")
-    
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                { 
-                    "type": "text",
-                    "text": "Transkribiere bitte das folgende Audio:"
-                },
-                {
-                    "type": "input_audio",
-                    "input_audio": {
-                        "data": encoded_string,
-                        "format": "wav"
-                    }
-                }
-            ]
-        }
-    ]
-    
-    response = client.chat.completions.create(
-         model="gpt-4o-audio-preview",
-         audio={"voice": "alloy", "format": "wav"},
-         messages=messages
-    )
-    return response.choices[0].message.content.strip()
+        transcription = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            response_format="text"
+        )
+    return transcription.text
 
 # OpenAI-Funktion zur Bildanalyse via Vision API (ursprünglich funktionierend)
 def analyze_image(image_path: str) -> str:
@@ -179,8 +157,8 @@ async def handle_voice(update, context):
     text = transcribe_audio(audio_path)
     os.remove(audio_path)
     
-    # Wenn im transkribierten Text "text" erwähnt wird, antworte als Tex
-    # ansonsten antworte mit einer Sprachnachricht.
+    # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text,
+    # ansonsten als Sprachnachricht.
     if "text" in text.lower():
         reply = generate_response(chat_id, text)
         await context.bot.send_message(chat_id=chat_id, text=reply)
