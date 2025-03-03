@@ -82,11 +82,11 @@ def analyze_image(image_path: str) -> str:
     with open(image_path, "rb") as image_file:
         image_data = image_file.read()
     base64_image = base64.b64encode(image_data).decode("utf-8")
-    # Hinweis: Eine direkte Image-Analyse-Funktion existiert nicht; stattdessen senden wir das Bild als Base64-kodierten String.
+    # Da es keine dedizierte Bildanalyse-Funktion gibt, senden wir das Bild als Base64-kodierten String
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "user", "content": f"Beschreibe dieses Bild: data:image/jpeg;base64,{base64_image}"}
+            {"role": "user", "content": f"Beschreibe bitte das folgende Bild: data:image/jpeg;base64,{base64_image}"}
         ],
         max_tokens=300,
     )
@@ -95,11 +95,12 @@ def analyze_image(image_path: str) -> str:
 # OpenAI-Funktion zur Bilderstellung (DALL·E‑3)
 def generate_image(prompt: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.images.create(
-        model="dalle-3",
+    response = client.images.generate(
+        model="dall-e-3",
         prompt=prompt,
+        size="1024x1024",
+        quality="standard",
         n=1,
-        size="1024x1024"
     )
     return response.data[0].url
 
@@ -111,7 +112,7 @@ async def start(update, context):
 async def handle_message(update, context):
     chat_id = str(update.effective_chat.id)
     message = update.message.text
-    # Prüfe, ob eine Bildgenerierung angefordert wird
+    # Prüfen, ob eine Bildgenerierung angefragt wird
     if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
         prompt = message.lower().replace("erstelle ein bild von", "").replace("generate an image of", "").strip()
         image_url = generate_image(prompt)
