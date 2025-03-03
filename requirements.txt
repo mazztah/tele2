@@ -7,6 +7,9 @@ werkzeug==2.2.2
 python-dotenv==1.0.0
 nest-asyncio==1.5.8
 langchain==0.0.148
-python-magic==0.4.27 
-PyPDF2==3.0.0         
+python-magic==0.4.27
+PyPDF2==3.0.0
 docx==0.2.4
+fpdf==1.7.2
+pandas==1.5.3
+openpyxl==3.0.10
