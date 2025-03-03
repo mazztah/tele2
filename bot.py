@@ -64,7 +64,7 @@ def generate_audio_response(text: str) -> bytes:
     )
     return response.content
 
-# OpenAI-Funktion zur Sprachanalyse (Voice-Input)
+# OpenAI-Funktion zur Sprachanalyse (Voice-Input) – offizielle Dokumentation, angepasst ohne "audio"-Parameter
 def transcribe_audio(audio_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(audio_path, "rb") as audio_file:
@@ -92,7 +92,7 @@ def transcribe_audio(audio_path: str) -> str:
     
     response = client.chat.completions.create(
          model="gpt-4o-audio-preview",
-         audio={"voice": "alloy", "format": "wav"},
+         modalities=["text", "audio"],
          messages=messages
     )
     return response.choices[0].message.content.strip()
@@ -180,7 +180,7 @@ async def handle_voice(update, context):
     os.remove(audio_path)
     
     # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text,
-    # ansonsten antworte mit einer Sprachnachricht.
+    # ansonsten als Sprachnachricht.
     if "text" in text.lower():
         reply = generate_response(chat_id, text)
         await context.bot.send_message(chat_id=chat_id, text=reply)
