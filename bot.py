@@ -22,11 +22,6 @@ try:
     import pandas as pd
 except ImportError:
     pd = None
-# Bibliothek für PDF-Erstellung
-try:
-    from fpdf import FPDF
-except ImportError:
-    FPDF = None
 
 # Umgebungsvariablen (z.B. via .env-Datei setzen)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -66,7 +61,8 @@ def get_chat_history(chat_id: str):
 def generate_response(chat_id: str, message: str) -> str:
     history = get_chat_history(chat_id)
     history.append({"role": "user", "content": message})
-    response = openai.ChatCompletion.create(
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    response = client.chat.completions.create(
         model="gpt-4o",
         messages=history,
         max_tokens=1500,
@@ -77,7 +73,8 @@ def generate_response(chat_id: str, message: str) -> str:
 
 # OpenAI-Funktion: Sprachgenerierung (Text-zu-Speech)
 def generate_audio_response(text: str) -> bytes:
-    response = openai.Audio.create(
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    response = client.audio.speech.create(
         model="tts-1",  # TTS-Modell laut Dokumentation
         voice="alloy",
         input=text
@@ -86,19 +83,22 @@ def generate_audio_response(text: str) -> bytes:
 
 # OpenAI-Funktion: Sprachanalyse (Transkription via Whisper)
 def transcribe_audio(audio_path: str) -> str:
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(audio_path, "rb") as audio_file:
-        transcription = openai.Audio.transcribe(
+        transcription = client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
             response_format="text"
         )
+    # Die API liefert bereits einen String zurück, wenn response_format="text" gewählt wurde.
     return transcription
 
 # OpenAI-Funktion: Bildanalyse via Vision API (ursprünglich funktionierend)
 def analyze_image(image_path: str) -> str:
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(image_path, "rb") as image_file:
         base64_image = base64.b64encode(image_file.read()).decode("utf-8")
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "user", "content": [
@@ -112,7 +112,8 @@ def analyze_image(image_path: str) -> str:
 
 # OpenAI-Funktion: Bilderstellung (DALL·E‑3)
 def generate_image(prompt: str) -> str:
-    response = openai.Image.create(
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    response = client.images.generate(
         model="dall-e-3",
         prompt=prompt,
         size="1024x1024",
@@ -120,31 +121,6 @@ def generate_image(prompt: str) -> str:
         n=1,
     )
     return response.data[0].url
-
-# Funktionen zur Dateierstellung aus Texteingabe
-
-def create_pdf(text: str, filename="output.pdf"):
-    if FPDF is None:
-        raise ImportError("fpdf ist nicht installiert.")
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    for line in text.split("\n"):
-        pdf.cell(200, 10, txt=line, ln=True)
-    pdf.output(filename)
-
-def create_excel(text: str, filename="output.xlsx"):
-    if pd is None:
-        raise ImportError("pandas (und openpyxl) sind nicht installiert.")
-    # Erstelle eine Liste aus den Zeilen
-    data = {"Zeile": text.split("\n")}
-    df = pd.DataFrame(data)
-    df.to_excel(filename, index=False)
-
-def create_html(text: str, filename="output.html"):
-    html_content = f"<html><head><meta charset='utf-8'></head><body><pre>{text}</pre></body></html>"
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(html_content)
 
 # Neuer Handler: Dateiupload und -verarbeitung
 async def handle_document(update, context):
@@ -166,7 +142,7 @@ async def handle_document(update, context):
                 with open(local_path, "rb") as f:
                     reader = PyPDF2.PdfReader(f)
                     for page in reader.pages:
-                        extracted_text += (page.extract_text() or "") + "\n"
+                        extracted_text += page.extract_text() + "\n"
             except Exception as e:
                 extracted_text = f"Fehler beim Lesen der PDF: {e}"
     elif ext in ["doc", "docx"]:
@@ -207,12 +183,11 @@ async def handle_document(update, context):
     else:
         summary = extracted_text
 
-    message = (
-        f"Dokument '{file_name}' verarbeitet.\nZusammenfassung:\n{summary}\n\n"
-        "Du kannst nun Fragen zum Dokument stellen mit /askdoc <deine Frage>.\n"
-        "Falls du den vollständigen Text herunterladen möchtest, benutze /download_document."
-    )
+    # Sende Rückmeldung an den Nutzer
+    message = f"Dokument '{file_name}' verarbeitet.\nZusammenfassung:\n{summary}\n\nDu kannst nun Fragen zum Dokument stellen mit /askdoc <deine Frage>.\nFalls du den vollständigen Text herunterladen möchtest, benutze /download_document."
     await context.bot.send_message(chat_id=chat_id, text=message)
+    
+    # Lösche die temporäre Datei
     os.remove(local_path)
 
 # Neuer Handler: Fragen zum zuletzt hochgeladenen Dokument beantworten
@@ -221,14 +196,13 @@ async def handle_askdoc(update, context):
     if chat_id not in doc_texts or not doc_texts[chat_id]:
         await context.bot.send_message(chat_id=chat_id, text="Es wurde noch kein Dokument verarbeitet.")
         return
+    # Die Frage extrahieren (alles nach dem Befehl)
     question = update.message.text.replace("/askdoc", "").strip()
     if not question:
         await context.bot.send_message(chat_id=chat_id, text="Bitte stelle deine Frage nach dem Befehl.")
         return
-    prompt = (
-        f"Beantworte folgende Frage basierend auf diesem Dokument:\n\nDokument:\n"
-        f"{doc_texts[chat_id][:4000]}\n\nFrage: {question}"
-    )
+    # Generiere eine Antwort basierend auf dem Dokument
+    prompt = f"Beantworte folgende Frage basierend auf diesem Dokument:\n\nDokument:\n{doc_texts[chat_id][:4000]}\n\nFrage: {question}"
     answer = generate_response(chat_id, prompt)
     await context.bot.send_message(chat_id=chat_id, text=answer)
 
@@ -238,46 +212,12 @@ async def handle_download_document(update, context):
     if chat_id not in doc_texts or not doc_texts[chat_id]:
         await context.bot.send_message(chat_id=chat_id, text="Es wurde noch kein Dokument verarbeitet.")
         return
+    # Erstelle eine temporäre Datei aus dem gespeicherten Text
     output_filename = f"processed_document_{chat_id}.txt"
     with open(output_filename, "w", encoding="utf-8") as out_file:
         out_file.write(doc_texts[chat_id])
     await context.bot.send_document(chat_id=chat_id, document=open(output_filename, "rb"), filename=output_filename)
     os.remove(output_filename)
-
-# Neuer Handler: Erstellung von Dateien aus Texteingaben (PDF, Excel, HTML)
-async def handle_create_file(update, context):
-    chat_id = str(update.effective_chat.id)
-    # Erwartetes Format: /create_file <pdf/excel/html> <Text>
-    args = update.message.text.split(maxsplit=2)
-    if len(args) < 3:
-        await context.bot.send_message(chat_id=chat_id, text="Verwende das Format: /create_file <pdf/excel/html> <Text>")
-        return
-
-    file_type = args[1].lower()
-    content = args[2]
-    if file_type == "excel":
-        output_filename = f"output_{chat_id}.xlsx"
-    elif file_type == "pdf":
-        output_filename = f"output_{chat_id}.pdf"
-    elif file_type == "html":
-        output_filename = f"output_{chat_id}.html"
-    else:
-        await context.bot.send_message(chat_id=chat_id, text="Nicht unterstützter Dateityp! (Nur pdf, excel, html)")
-        return
-
-    try:
-        if file_type == "pdf":
-            create_pdf(content, filename=output_filename)
-        elif file_type == "excel":
-            create_excel(content, filename=output_filename)
-        elif file_type == "html":
-            create_html(content, filename=output_filename)
-        await context.bot.send_document(chat_id=chat_id, document=open(output_filename, "rb"), filename=output_filename)
-    except Exception as e:
-        await context.bot.send_message(chat_id=chat_id, text=f"Fehler bei der Dateierstellung: {e}")
-    finally:
-        if os.path.exists(output_filename):
-            os.remove(output_filename)
 
 # Handler für den /start-Befehl
 async def start(update, context):
@@ -285,8 +225,7 @@ async def start(update, context):
         "Hallo! Ich bin dein AI-gestützter Telegram-Bot.\n"
         "Du kannst mir Nachrichten, Bilder, Sprachnachrichten oder Dokumente (PDF, DOCX, XLS/XLSX, TXT) senden.\n"
         "Bei Dokumenten extrahiere ich den Inhalt und erstelle eine Zusammenfassung. Anschließend kannst du "
-        "mit /askdoc Fragen zum Dokument stellen oder mit /download_document den vollständigen Text herunterladen.\n\n"
-        "Zusätzlich kannst du mit /create_file <pdf/excel/html> <Text> eine Datei aus einer Texteingabe erstellen."
+        "mit /askdoc Fragen zum Dokument stellen oder mit /download_document den vollständigen Text herunterladen."
     )
 
 # Handler für Textnachrichten
@@ -339,10 +278,11 @@ async def handle_voice(update, context):
     os.remove(audio_path)
     
     # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text, ansonsten als Sprachnachricht.
-    reply = generate_response(chat_id, text)
     if "text" in text.lower():
+        reply = generate_response(chat_id, text)
         await context.bot.send_message(chat_id=chat_id, text=reply)
     else:
+        reply = generate_response(chat_id, text)
         audio_response = generate_audio_response(reply)
         with open("response.ogg", "wb") as audio_file:
             audio_file.write(audio_response)
@@ -366,7 +306,6 @@ application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 application.add_handler(CommandHandler("generate", handle_generate_image))
 application.add_handler(CommandHandler("askdoc", handle_askdoc))
 application.add_handler(CommandHandler("download_document", handle_download_document))
-application.add_handler(CommandHandler("create_file", handle_create_file))
 
 # Webhook-Route: Hier empfängt der Bot Updates von Telegram
 @app.route('/webhook', methods=['POST'])
@@ -396,4 +335,5 @@ if __name__ == '__main__':
     startup_future = asyncio.run_coroutine_threadsafe(startup(), global_loop)
     startup_future.result()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+
 
