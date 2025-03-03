@@ -67,14 +67,14 @@ def generate_audio_response(text: str) -> bytes:
 # OpenAI-Funktion zur Sprachanalyse (Transkription)
 def transcribe_audio(audio_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    # Hier wird der Datei-Handle übergeben, sodass das Format (z.B. .ogg) korrekt erkannt wird.
     with open(audio_path, "rb") as audio_file:
         response = client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
             response_format="text"
         )
-    return response.text
+    # Da response_format="text" gewählt wurde, liefert die API direkt einen String zurück.
+    return response
 
 # OpenAI-Funktion zur Bildanalyse via Vision API (ursprünglich funktionierend)
 def analyze_image(image_path: str) -> str:
