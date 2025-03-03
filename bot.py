@@ -40,7 +40,7 @@ def get_chat_history(chat_id: str):
         }]
     return chat_histories[chat_id]
 
-# OpenAI-Funktion zur Generierung von Textantworten
+# OpenAI-Funktion zur Generierung von Textantworten (GPT-4)
 def generate_response(chat_id: str, message: str) -> str:
     history = get_chat_history(chat_id)
     history.append({"role": "user", "content": message})
@@ -54,7 +54,7 @@ def generate_response(chat_id: str, message: str) -> str:
     history.append({"role": "assistant", "content": reply})
     return reply
 
-# OpenAI-Funktion zur Sprachgenerierung
+# OpenAI-Funktion zur Sprachgenerierung (Text-zu-Sprache)
 def generate_audio_response(text: str) -> bytes:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.audio.speech.create(
@@ -64,7 +64,7 @@ def generate_audio_response(text: str) -> bytes:
     )
     return response.content
 
-# OpenAI-Funktion zur Sprachanalyse
+# OpenAI-Funktion zur Sprachanalyse (Transkription)
 def transcribe_audio(audio_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(audio_path, "rb") as audio_file:
@@ -76,18 +76,23 @@ def transcribe_audio(audio_path: str) -> str:
     )
     return response.text
 
-# OpenAI-Funktion zur Bildanalyse
+# OpenAI-Funktion zur Bildanalyse (simuliert via Base64-Übertragung an GPT-4)
 def analyze_image(image_path: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     with open(image_path, "rb") as image_file:
         image_data = image_file.read()
-    response = client.images.analyze(
-        model="gpt-4o-vision",
-        image=image_data
+    base64_image = base64.b64encode(image_data).decode("utf-8")
+    # Hinweis: Eine direkte Image-Analyse-Funktion existiert nicht; stattdessen senden wir das Bild als Base64-kodierten String.
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "user", "content": f"Beschreibe dieses Bild: data:image/jpeg;base64,{base64_image}"}
+        ],
+        max_tokens=300,
     )
-    return response.text
+    return response.choices[0].message.content.strip()
 
-# OpenAI-Funktion zur Bilderstellung
+# OpenAI-Funktion zur Bilderstellung (DALL·E‑3)
 def generate_image(prompt: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.images.create(
@@ -98,29 +103,26 @@ def generate_image(prompt: str) -> str:
     )
     return response.data[0].url
 
-# Handler für Sprachnachrichten
-async def handle_voice(update, context):
-    chat_id = str(update.effective_chat.id)
-    voice = update.message.voice
-    file = await bot.get_file(voice.file_id)
-    audio_path = f"temp_{voice.file_id}.ogg"
-    await file.download_to_drive(audio_path)
-    
-    text = transcribe_audio(audio_path)
-    os.remove(audio_path)
-    
-    if "text" in text.lower():
-        reply = generate_response(chat_id, text)
-        await context.bot.send_message(chat_id=chat_id, text=reply)
-    else:
-        reply = generate_response(chat_id, text)
-        audio_response = generate_audio_response(reply)
-        with open("response.ogg", "wb") as audio_file:
-            audio_file.write(audio_response)
-        await context.bot.send_voice(chat_id=chat_id, voice=open("response.ogg", "rb"))
-        os.remove("response.ogg")
+# Handler für den /start-Befehl
+async def start(update, context):
+    await update.message.reply_text("Hallo! Ich bin dein AI-gestützter Telegram-Bot. Sende mir eine Nachricht, ein Bild oder eine Sprachnachricht, und ich werde antworten!")
 
-# Handler für Bilder
+# Handler für Textnachrichten
+async def handle_message(update, context):
+    chat_id = str(update.effective_chat.id)
+    message = update.message.text
+    # Prüfe, ob eine Bildgenerierung angefordert wird
+    if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
+        prompt = message.lower().replace("erstelle ein bild von", "").replace("generate an image of", "").strip()
+        image_url = generate_image(prompt)
+        get_chat_history(chat_id).append({"role": "user", "content": f"[Bildgenerierung] {prompt}"})
+        get_chat_history(chat_id).append({"role": "assistant", "content": f"[Bild] {image_url}"})
+        await context.bot.send_photo(chat_id=chat_id, photo=image_url)
+    else:
+        reply = generate_response(chat_id, message)
+        await context.bot.send_message(chat_id=chat_id, text=reply)
+
+# Handler für empfangene Fotos (Bildanalyse)
 async def handle_photo(update, context):
     chat_id = str(update.effective_chat.id)
     photo = update.message.photo[-1]
@@ -133,16 +135,47 @@ async def handle_photo(update, context):
     
     await context.bot.send_message(chat_id=chat_id, text=f"Bildanalyse: {description}")
 
-# Handler für Bilderstellung
+# Handler für den /generate-Befehl (Bilderstellung)
 async def handle_generate_image(update, context):
     chat_id = str(update.effective_chat.id)
     prompt = update.message.text.replace("/generate", "").strip()
     if not prompt:
         await context.bot.send_message(chat_id=chat_id, text="Bitte gib eine Bildbeschreibung an!")
         return
-    
     image_url = generate_image(prompt)
     await context.bot.send_photo(chat_id=chat_id, photo=image_url)
+
+# Handler für Sprachnachrichten
+async def handle_voice(update, context):
+    chat_id = str(update.effective_chat.id)
+    voice = update.message.voice
+    file = await bot.get_file(voice.file_id)
+    audio_path = f"temp_{voice.file_id}.ogg"
+    await file.download_to_drive(audio_path)
+    
+    text = transcribe_audio(audio_path)
+    os.remove(audio_path)
+    
+    # Wenn im transkribierten Text explizit "text" erwähnt wird, antworte als Text,
+    # ansonsten antworte mit einer Sprachnachricht.
+    if "text" in text.lower():
+        reply = generate_response(chat_id, text)
+        await context.bot.send_message(chat_id=chat_id, text=reply)
+    else:
+        reply = generate_response(chat_id, text)
+        audio_response = generate_audio_response(reply)
+        with open("response.ogg", "wb") as audio_file:
+            audio_file.write(audio_response)
+        await context.bot.send_voice(chat_id=chat_id, voice=open("response.ogg", "rb"))
+        os.remove("response.ogg")
+
+# Globaler Event Loop in einem separaten Thread
+global_loop = asyncio.new_event_loop()
+def start_loop(loop: asyncio.AbstractEventLoop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+loop_thread = threading.Thread(target=start_loop, args=(global_loop,), daemon=True)
+loop_thread.start()
 
 # Handler registrieren
 application.add_handler(CommandHandler("start", start))
@@ -151,7 +184,7 @@ application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 application.add_handler(CommandHandler("generate", handle_generate_image))
 
-# Webhook-Route
+# Webhook-Route: Hier empfängt der Bot Updates von Telegram
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update_json = request.get_json(force=True)
