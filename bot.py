@@ -115,14 +115,15 @@ def analyze_image(image_path: str) -> str:
 # OpenAI-Funktion: Bilderstellung (DALL·E‑3)
 def generate_image(prompt: str) -> str:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
-   ರೀವರ್‌ ಎಕ್ಸ್‌ ಗಳು response = client.images.generate(
-    model="dall-e-3",
-    prompt=prompt,
-    size="1024x1024",
-    quality="standard",
-    n=1,
-)
-return response.data[0].url
+    response = client.images.generate(
+        model="dall-e-3",
+        prompt=prompt,
+        size="1024x1024",
+        quality="standard",
+        n=1,
+    )
+    return response.data[0].url
+
 
 # Handler für den /start-Befehl
 async def start(update, context):
