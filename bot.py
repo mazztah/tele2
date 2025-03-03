@@ -54,11 +54,11 @@ def generate_response(chat_id: str, message: str) -> str:
     history.append({"role": "assistant", "content": reply})
     return reply
 
-# OpenAI-Funktion zur Sprachgenerierung (Text-zu-Sprache)
+# OpenAI-Funktion zur Sprachgenerierung (Text-zu-Speech)
 def generate_audio_response(text: str) -> bytes:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.audio.speech.create(
-        model="gpt-4o",
+        model="tts-1",    # Korrigiert: Modell für TTS ist "tts-1"
         voice="alloy",
         input=text
     )
@@ -159,7 +159,7 @@ async def handle_voice(update, context):
     os.remove(audio_path)
     
     # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text,
-    # ansonsten antworte mit einer Sprachnachricht.
+    # ansonsten als Sprachnachricht.
     if "text" in text.lower():
         reply = generate_response(chat_id, text)
         await context.bot.send_message(chat_id=chat_id, text=reply)
