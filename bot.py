@@ -124,15 +124,14 @@ def generate_image(prompt: str) -> str:
     )
     return response.data[0].url
 
-
 # Handler für den /start-Befehl
 async def start(update, context):
     await update.message.reply_text(
         "Hallo! Ich bin dein AI-gestützter Telegram-Bot.\n"
         "Du kannst mir Nachrichten, Bilder, Sprachnachrichten oder Dokumente (PDF, DOCX, XLS/XLSX, TXT) senden.\n"
-        "Mit /create <format> <text> kannst du Dateien (pdf, docx, xlsx, html) erstellen.\n"
-        "Bei Dokumenten extrahiere ich den Inhalt und erstelle eine Zusammenfassung. Anschließend kannst du "
-        "mit /askdoc Fragen zum Dokument stellen oder mit /download_document den vollständigen Text herunterladen."
+        "Mit /create <format> <Text-Befehl> kannst du Dateien (pdf, docx, xlsx, html) erstellen.\n"
+        "Bei /create wird der Text-Befehl über die OpenAI API verarbeitet, um z.B. alle Monate zeilenweise auszugeben.\n"
+        "Anschließend wird die Datei erstellt und an dich gesendet."
     )
 
 # Handler für Textnachrichten
@@ -243,7 +242,9 @@ async def handle_document(update, context):
     else:
         summary = extracted_text
 
-    message = f"Dokument '{file_name}' verarbeitet.\nZusammenfassung:\n{summary}\n\nDu kannst nun Fragen zum Dokument stellen mit /askdoc <deine Frage>.\nFalls du den vollständigen Text herunterladen möchtest, benutze /download_document."
+    message = (f"Dokument '{file_name}' verarbeitet.\nZusammenfassung:\n{summary}\n\n"
+               "Du kannst nun Fragen zum Dokument stellen mit /askdoc <deine Frage>.\n"
+               "Falls du den vollständigen Text herunterladen möchtest, benutze /download_document.")
     await context.bot.send_message(chat_id=chat_id, text=message)
     
     os.remove(local_path)
@@ -258,7 +259,8 @@ async def handle_askdoc(update, context):
     if not question:
         await context.bot.send_message(chat_id=chat_id, text="Bitte stelle deine Frage nach dem Befehl.")
         return
-    prompt = f"Beantworte folgende Frage basierend auf diesem Dokument:\n\nDokument:\n{doc_texts[chat_id][:4000]}\n\nFrage: {question}"
+    prompt = (f"Beantworte folgende Frage basierend auf diesem Dokument:\n\n"
+              f"Dokument:\n{doc_texts[chat_id][:4000]}\n\nFrage: {question}")
     answer = generate_response(chat_id, prompt)
     await context.bot.send_message(chat_id=chat_id, text=answer)
 
@@ -284,67 +286,118 @@ async def handle_generate_image(update, context):
     image_url = generate_image(prompt)
     await context.bot.send_photo(chat_id=chat_id, photo=image_url)
 
-# Neuer Handler: Dateierstellung basierend auf Texteingabe
+# Neuer Handler: Dateierstellung basierend auf Texteingabe und OpenAI API
 async def handle_create(update, context):
     chat_id = str(update.effective_chat.id)
     command_text = update.message.text.replace("/create", "").strip()
     
     if not command_text:
-        await context.bot.send_message(chat_id=chat_id, text="Nutze: /create <format> <text>. Formate: pdf, docx, xlsx, html")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Nutze: /create <format> <Text-Befehl>. Beispiel: '/create pdf Schreibe alle Monate in separate Zeilen'"
+        )
         return
     
     parts = command_text.split(maxsplit=1)
     if len(parts) < 2:
-        await context.bot.send_message(chat_id=chat_id, text="Bitte gib ein Format und Text an, z.B. '/create pdf Hallo Welt'")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Bitte gib ein Format und einen Text-Befehl an, z. B. '/create pdf Schreibe alle Monate in separate Zeilen'"
+        )
         return
     
-    format_type, content = parts[0].lower(), parts[1]
+    format_type, prompt = parts[0].lower(), parts[1]
+    
+    # Verarbeite den Textbefehl über die OpenAI API, um den Inhalt zu generieren
+    file_content = generate_response(chat_id, prompt)
+    
     temp_filename = f"output_{chat_id}.{format_type}"
-
+    
     try:
         if format_type == "pdf":
             if not PyPDF2 or not hasattr(canvas, 'Canvas'):
-                await context.bot.send_message(chat_id=chat_id, text="PDF-Erstellung nicht verfügbar (reportlab fehlt).")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="PDF-Erstellung nicht verfügbar (reportlab fehlt)."
+                )
                 return
             buffer = BytesIO()
             c = canvas.Canvas(buffer, pagesize=letter)
-            c.drawString(100, 750, content)
+            # Schreibe den generierten Inhalt zeilenweise
+            lines = file_content.split("\n")
+            y = 750  # Start-Y-Position
+            for line in lines:
+                c.drawString(100, y, line)
+                y -= 15  # Zeilenabstand
             c.showPage()
             c.save()
             buffer.seek(0)
-            await context.bot.send_document(chat_id=chat_id, document=buffer, filename=temp_filename)
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=buffer,
+                filename=temp_filename
+            )
             buffer.close()
-
         elif format_type == "docx":
             if not docx:
-                await context.bot.send_message(chat_id=chat_id, text="DOCX-Erstellung nicht verfügbar (python-docx fehlt).")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="DOCX-Erstellung nicht verfügbar (python-docx fehlt)."
+                )
                 return
-            doc = docx.Document()
-            doc.add_paragraph(content)
-            doc.save(temp_filename)
-            await context.bot.send_document(chat_id=chat_id, document=open(temp_filename, "rb"), filename=temp_filename)
+            document = docx.Document()
+            document.add_paragraph(file_content)
+            document.save(temp_filename)
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=open(temp_filename, "rb"),
+                filename=temp_filename
+            )
             os.remove(temp_filename)
-
         elif format_type == "xlsx":
             if not pd or not openpyxl:
-                await context.bot.send_message(chat_id=chat_id, text="XLSX-Erstellung nicht verfügbar (pandas/openpyxl fehlt).")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="XLSX-Erstellung nicht verfügbar (pandas/openpyxl fehlt)."
+                )
                 return
-            df = pd.DataFrame({"Text": [content]})
+            df = pd.DataFrame({"Text": file_content.split("\n")})
             df.to_excel(temp_filename, index=False)
-            await context.bot.send_document(chat_id=chat_id, document=open(temp_filename, "rb"), filename=temp_filename)
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=open(temp_filename, "rb"),
+                filename=temp_filename
+            )
             os.remove(temp_filename)
-
         elif format_type == "html":
-            html_content = f"""<!DOCTYPE html><html><body><p>{content}</p></body></html>"""
+            html_content = f"""<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Generated Document</title>
+  </head>
+  <body>
+    <pre>{file_content}</pre>
+  </body>
+</html>"""
             with open(temp_filename, "w", encoding="utf-8") as f:
                 f.write(html_content)
-            await context.bot.send_document(chat_id=chat_id, document=open(temp_filename, "rb"), filename=temp_filename)
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=open(temp_filename, "rb"),
+                filename=temp_filename
+            )
             os.remove(temp_filename)
-
         else:
-            await context.bot.send_message(chat_id=chat_id, text="Ungültiges Format. Nutze: pdf, docx, xlsx, html")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Ungültiges Format. Nutze: pdf, docx, xlsx, html"
+            )
     except Exception as e:
-        await context.bot.send_message(chat_id=chat_id, text=f"Fehler beim Erstellen der Datei: {str(e)}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"Fehler beim Erstellen der Datei: {str(e)}"
+        )
 
 # Globaler Event Loop
 global_loop = asyncio.new_event_loop()
@@ -393,3 +446,4 @@ if __name__ == '__main__':
     startup_future = asyncio.run_coroutine_threadsafe(startup(), global_loop)
     startup_future.result()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+
