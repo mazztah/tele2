@@ -15,7 +15,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # z.B. "https://deinedomain.de/webhook"
 
 # Logging konfigurieren
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 # Flask-App initialisieren
@@ -27,18 +29,31 @@ request_instance = HTTPXRequest(pool_timeout=20)
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN, request=request_instance)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# OpenAI-Funktion zur Generierung von Textantworten (GPT-4)
-def generate_response(message: str) -> str:
+# Globaler Chatverlauf pro Chat (Speicherung als Liste von Nachrichten)
+chat_histories = {}
+
+def get_chat_history(chat_id: str):
+    if chat_id not in chat_histories:
+        # Initialisiere mit einer Systemnachricht
+        chat_histories[chat_id] = [{
+            "role": "system",
+            "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech."
+        }]
+    return chat_histories[chat_id]
+
+# OpenAI-Funktion zur Generierung von Textantworten (GPT-4) unter Einbeziehung des Chatverlaufs
+def generate_response(chat_id: str, message: str) -> str:
+    history = get_chat_history(chat_id)
+    history.append({"role": "user", "content": message})
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are an AI assistant for a Telegram bot. Answer concisely and helpfully. Manchmal ironisch und frech."},
-            {"role": "user", "content": message},
-        ],
+        messages=history,
         max_tokens=1500,
     )
-    return response.choices[0].message.content.strip()
+    reply = response.choices[0].message.content.strip()
+    history.append({"role": "assistant", "content": reply})
+    return reply
 
 # OpenAI-Funktion zur Generierung von Bildern (DALL·E‑3)
 def generate_image(prompt: str) -> str:
@@ -71,29 +86,39 @@ def analyze_image(image_path: str) -> str:
 
 # /start-Befehl
 async def start(update, context):
-    await update.message.reply_text("Hallo! Ich bin dein AI-Chatbot. Sende mir einen Text, ein Bild oder fordere 'Erstelle ein Bild von ...' an.")
+    await update.message.reply_text(
+        "Hallo! Ich bin dein AI-Chatbot. Sende mir einen Text, ein Bild oder fordere 'Erstelle ein Bild von ...' an."
+    )
 
 # Nachrichten-Handler: Prüft, ob ein Bild generiert werden soll oder eine Textnachricht vorliegt
 async def handle_message(update, context):
+    chat_id = str(update.effective_chat.id)
     message = update.message.text
     if message.lower().startswith("erstelle ein bild von") or message.lower().startswith("generate an image of"):
-        # Entferne den Befehlsteil und trimme den Prompt
+        # Bildgenerierung: entferne den Befehlsteil und trimme den Prompt
         prompt = message.lower().replace("erstelle ein bild von", "").replace("generate an image of", "").strip()
         image_url = generate_image(prompt)
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+        # Füge den Bild-Prompt dem Chatverlauf hinzu
+        get_chat_history(chat_id).append({"role": "user", "content": f"[Bildgenerierung] {prompt}"})
+        # Optional: Die Antwort des Bildgenerators wird auch im Chatverlauf vermerkt\n        get_chat_history(chat_id).append({"role": "assistant", "content": f"[Bild] {image_url}"})
+        await context.bot.send_photo(chat_id=chat_id, photo=image_url)
     else:
-        response = generate_response(message)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
+        reply = generate_response(chat_id, message)
+        await context.bot.send_message(chat_id=chat_id, text=reply)
 
-# Foto-Handler: Analysiert empfangene Bilder
+# Foto-Handler: Analysiert empfangene Bilder und speichert den Verlauf
 async def handle_photo(update, context):
+    chat_id = str(update.effective_chat.id)
     photo = update.message.photo[-1]  # Wähle das Foto in höchster Auflösung
     file = await bot.get_file(photo.file_id)
     image_path = f"temp_{photo.file_id}.jpg"
     await file.download_to_drive(image_path)
+    # Vermerke im Chatverlauf, dass ein Bild geschickt wurde
+    get_chat_history(chat_id).append({"role": "user", "content": "[Bild]"}) 
     description = analyze_image(image_path)
     os.remove(image_path)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=description)
+    get_chat_history(chat_id).append({"role": "assistant", "content": description})
+    await context.bot.send_message(chat_id=chat_id, text=description)
 
 # Handler registrieren
 application.add_handler(CommandHandler("start", start))
