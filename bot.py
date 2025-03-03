@@ -73,7 +73,8 @@ def transcribe_audio(audio_path: str) -> str:
             file=audio_file,
             response_format="text"
         )
-    return transcription.text
+    # Da response_format="text" verwendet wird, liefert die API bereits einen String zurück.
+    return transcription
 
 # OpenAI-Funktion zur Bildanalyse via Vision API (ursprünglich funktionierend)
 def analyze_image(image_path: str) -> str:
@@ -158,7 +159,7 @@ async def handle_voice(update, context):
     os.remove(audio_path)
     
     # Wenn im transkribierten Text "text" erwähnt wird, antworte als Text,
-    # ansonsten als Sprachnachricht.
+    # ansonsten antworte mit einer Sprachnachricht.
     if "text" in text.lower():
         reply = generate_response(chat_id, text)
         await context.bot.send_message(chat_id=chat_id, text=reply)
