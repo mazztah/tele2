@@ -79,7 +79,7 @@ def generate_audio_response(text: str) -> bytes:
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     response = client.audio.speech.create(
         model="tts-1",
-        voice="shimmer",
+        voice="sage",
         input=text
     )
     return response.content
